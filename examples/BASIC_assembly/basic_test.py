@@ -7,5 +7,10 @@
 #  */
 
 from ...input.construct import Construct
+from ...protocol.protocol import Basic
 
-design = Construct
+sbol_path_name = ""
+sbol_input = sbol_path_name
+
+design = Construct(sbol_input)
+protocol = Basic(design)

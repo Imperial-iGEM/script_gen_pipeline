@@ -15,3 +15,7 @@ class Construct():
 
         pass
 
+    def get_all_modules(self):
+        """ Return all the parts within the final construct
+        that are building blocks for assembly """
+        raise NotImplementedError
