@@ -18,7 +18,7 @@ import Container
 import Fridge 
 
 import Step
-import Construct
+from inputs.construct import Construct
 
 
 class Protocol:
@@ -32,15 +32,60 @@ class Protocol:
 
         raise NotImplementedError
 
-    def generate_ot_script(self, assay, template_script):
-        """ Build a python script for Opentrons. Based on DNAbot
+    # TODO: update this from old protocol
+    # def generate_ot_script(self, assay, template_script, **kwargs):
+    #     """ Build a python script for Opentrons. Based on DNAbot
 
+    #     Args:
+    #         assay: name of the type of protocol to be run on liquid handler
+    #         template_script: pathname to the python script used as template
+    #     """
+
+    #     raise NotImplementedError
+
+    # This is the OLD DNAbot script generator - just for test use
+    def generate_ot2_script(self, ot2_script_path, template_path, **kwargs):
+        """Generates an ot2 script named 'ot2_script_path', where kwargs are
+        written as global variables at the top of the script. For each kwarg, the 
+        keyword defines the variable name while the value defines the name of the 
+        variable. The remainder of template file is subsequently written below.        
+        
         Args:
-            assay: name of the type of protocol to be run on liquid handler
-            template_script: pathname to the python script used as template
+            ot2_script_path: name of the output file desired
+            template_path: full path to the template script for this protocol
         """
+        print("output location of ot2_script_path:{}".format(ot2_script_path))
+        print(os.path.realpath(ot2_script_path))
+        this_object_output_path = os.path.realpath(ot2_script_path)
 
-        raise NotImplementedError
+        # current_path = os.getcwd()
+        # remove_example = os.path.split("my_examples")
+        # writing_path = os.path.join(current_path, "output")
+        # output_path = os.path.join(writing_path, ot2_script_path)
+        
+        with open(ot2_script_path, 'w') as wf:
+            with open(template_path, 'r') as rf:
+                for index, line in enumerate(rf):
+                    if line[:3] == 'def':
+                        function_start = index
+                        break
+                    else:
+                        wf.write(line)
+                for key, value in kwargs.items():
+                    wf.write('{}='.format(key))
+                    if type(value) == dict:
+                        wf.write(json.dumps(value))
+                    elif type(value) == str:
+                        wf.write("'{}'".format(value))
+                    else:
+                        wf.write(str(value))
+                    wf.write('\n')
+                wf.write('\n')
+            with open(template_path, 'r') as rf:
+                for index, line in enumerate(rf):
+                    if index >= function_start - 1:
+                        wf.write(line)
+        return this_object_output_path
 
     def add_step(self, step: Step) -> "Protocol":
         """Add an instruction step to the protocol for documentation.
@@ -374,7 +419,7 @@ TRANS_SPOT_OUT_PATH = '4_transformation.ot2.py'
 basic_steps = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
 
 
-class Basic(Clone):
+class Basic(Protocol):
     """ Specific protocol run of BASIC Assembly as described
     in DNAbot
     """
@@ -382,64 +427,96 @@ class Basic(Clone):
     def __init__(self):
         super().__init__()
 
-        self.steps = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
-        inputs = [input_construct_path, output_sources_paths]
-        subprotocols = [Subprotocol(str(step), step, inputs) for step in self.steps]        
+        self.parameters = {
+            'SPOTTING_VOLS_DICT': {2: 5, 3: 5, 4: 5, 5: 5, 6: 5, 7: 5},
+            'SOURCE_DECK_POS': ['2', '5', '8', '7', '10', '11'],
+            'ethanol_well_for_stage_2': "A11"
+        }
+        self.scripts = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
+        self.subprotocols = [Subprotocol(str(script), script, self.construct, self.parameters) for script in self.scripts]
 
     def run(self) -> "Protocol":
 
-        for step in subprotocols:
-            generate_ot_script(self, assay, template_script)
+        for step in self.subprotocols:
+            self.generate_ot_script(self, assay, template_script)
             raise NotImplementedError
-
-    def _generate_clips_dict(self):
-        pass
 
 
 class Subprotocol(Protocol):
-    def __init__(self, name, out_pathname, inputs):
-        super().__init__()
-
+    def __init__(self, name, out_pathname, construct, parameters):
         self.name = name
         self.out_pathname = out_pathname
-        self.args = kwargs
+
+        self.input_construct_path = construct.input_construct_path
+        self.output_sources_paths = construct.output_sources_paths
+
+        self.parameters = parameters
+        self.kwargs = self._get_basic_kwargs()
+        # super().__init__()
+
+        self.template_script = self._get_template()
+
+    def _get_basic_kwargs(self):
+        """ Get the keyword arguments unique to each 
+        BASIC subprotocol (clip, purification...) needed
+        for the creation of opentrons scripts. Completely based
+        on DNAbot's opentrons script generator reqs and inputs.
+
+        Returns: 
+            Keyword arguments unique to the name of the subprotocol
+        """
 
         print('Processing input csv files...')
-        constructs_list = self._generate_constructs_list(inputs[0])
+        constructs_list = self.generate_constructs_list(
+            self.input_construct_path)
         clips_df = self.generate_clips_df(constructs_list)
-        print(output_sources_paths)
-        sources_dict = self.generate_sources_dict(output_sources_paths)
+        sources_dict = self.generate_sources_dict(self.output_sources_paths)
 
         # calculate OT2 script variables
         print('Calculating OT-2 variables...')
         clips_dict = self.generate_clips_dict(clips_df, sources_dict)
         magbead_sample_number = clips_df['number'].sum()
-        final_assembly_dict = self.generate_final_assembly_dict(constructs_list,
-                                                        clips_df)
+        final_assembly_dict = self.generate_final_assembly_dict(
+            constructs_list, clips_df)
         final_assembly_tipracks = self.calculate_final_assembly_tipracks(
             final_assembly_dict)
         spotting_tuples = self.generate_spotting_tuples(constructs_list,
-                                                SPOTTING_VOLS_DICT)
+                                                        self.parameters['SPOTTING_VOLS_DICT'])
 
-
+        # TODO: make human clear which basic step corresponds to each case
         if self.name == str(basic_steps[0]):
-            clips_dict=clips_dict
+            return {'clips_dict': clips_dict}
         if self.name == str(basic_steps[1]):
-            sample_number=magbead_sample_number
-            # THIS IS FOR THE ETHANOL TROUGH WELL IN STEP 2
-            ethanol_well=ethanol_well_for_stage_2
+            return {'sample_number': magbead_sample_number,
+                    # THIS IS FOR THE ETHANOL TROUGH WELL IN STEP 2
+                    'ethanol_well': self.parameters['ethanol_well_for_stage_2']}
         if self.name == str(basic_steps[2]):
-            final_assembly_dict=final_assembly_dict
-            tiprack_num=final_assembly_tipracks
+            return {'final_assembly_dict': final_assembly_dict,
+                    'tiprack_num': final_assembly_tipracks}
         if self.name == str(basic_steps[3]):
-            spotting_tuples=spotting_tuples
-            #Deep well plate for Soc media during
-            #soc_well="A{}".format(dnabotinst.soc_column))
-            #previously the information about the location of the
-            soc_well="A1"z
+            return {'spotting_tuples': spotting_tuples,
+                    # Deep well plate for Soc media during
+                    # soc_well="A{}".format(dnabotinst.soc_column))
+                    # previously the information about the location of the
+                    'soc_well': "A1"}
+        else:
+            assert self.name in basic_steps, f"The subprotocol {self.name} is not one of the possible protocols {basic_steps}"
+            return 0
 
+    def _get_template(self):
+        if self.name == str(basic_steps[0]):
+            return 'assembly_template.py'
+        if self.name == str(basic_steps[1]):
+            return 'clip_template.py'
+        if self.name == str(basic_steps[2]):
+            return 'purification_template.py'
+        if self.name == str(basic_steps[3]):
+            return 'transformation_template.py'
+        else:
+            assert self.name in basic_steps, f"Template script = '', subprotocol name {self.name} does not match any of {basic_steps}"
+            return ''
 
-    def generate_constructs_list(path):
+    def generate_constructs_list(self, path):
         """Generates a list of dataframes corresponding to each construct. Each 
         dataframe lists components of the CLIP reactions required.
         """
@@ -533,7 +610,6 @@ class Subprotocol(Protocol):
                 clips_df.at[index, 'mag_well'] = tuple(mag_wells)
         return clips_df
 
-
     def generate_sources_dict(paths):
         """Imports csvs files containing a series of parts/linkers with 
         corresponding information into a dictionary where the key corresponds with
@@ -553,7 +629,6 @@ class Subprotocol(Protocol):
                         csv_values.append(SOURCE_DECK_POS[deck_index])
                         sources_dict[str(source[0])] = tuple(csv_values)
         return sources_dict
-
 
     def generate_clips_dict(clips_df, sources_dict):
         """Using clips_df and sources_dict, returns a clips_dict which acts as the 
@@ -607,7 +682,6 @@ class Subprotocol(Protocol):
             clips_dict[key] = [item for sublist in value for item in sublist]
         return clips_dict
 
-
     def generate_final_assembly_dict(constructs_list, clips_df):
         """Using constructs_list and clips_df, returns a dictionary of final
         assemblies with keys defining destination plate well positions and values
@@ -631,7 +705,6 @@ class Subprotocol(Protocol):
                 construct_index + 1)] = construct_well_list
         return final_assembly_dict
 
-
     def calculate_final_assembly_tipracks(final_assembly_dict):
         """Calculates the number of final assembly tipracks required ensuring
         no more than MAX_FINAL_ASSEMBLY_TIPRACKS are used.
@@ -648,7 +721,6 @@ class Subprotocol(Protocol):
                 'Final assembly tiprack number exceeds number of slots. Reduce number of constructs in constructs.csv')
         else:
             return final_assembly_tipracks
-
 
     def generate_spotting_tuples(constructs_list, spotting_vols_dict):
         """Using constructs_list, generates a spotting tuple
@@ -679,6 +751,8 @@ class Subprotocol(Protocol):
             spotting_tuples.append((tuple_wells, tuple_wells, tuple_vols))
         return spotting_tuples
 
+    def __str__(self):
+        return self.name
 
     def generate_ot2_script(ot2_script_path, template_path, **kwargs):
         """Generates an ot2 script named 'ot2_script_path', where kwargs are 
@@ -690,10 +764,10 @@ class Subprotocol(Protocol):
         print(os.path.realpath(ot2_script_path))
         this_object_output_path = os.path.realpath(ot2_script_path)
 
-        #current_path = os.getcwd()
-        #remove_example = os.path.split("my_examples")
-        #writing_path = os.path.join(current_path, "output")
-        #output_path = os.path.join(writing_path, ot2_script_path)
+        # current_path = os.getcwd()
+        # remove_example = os.path.split("my_examples")
+        # writing_path = os.path.join(current_path, "output")
+        # output_path = os.path.join(writing_path, ot2_script_path)
         
         with open(ot2_script_path, 'w') as wf:
             with open(template_path, 'r') as rf:

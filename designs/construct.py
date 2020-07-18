@@ -8,10 +8,13 @@
 
 
 class Construct():
-    def __init__(self, sbol_input):
+    def __init__(self, input_construct_path, output_sources_paths):
 
         self.id = ""
         self.parts = ""
+
+        self.input_construct_path = input_construct_path
+        self.output_sources_paths = output_sources_paths
 
         pass
 
