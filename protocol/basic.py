@@ -1,4 +1,4 @@
-"""GoldenGate assembly design process and steps."""
+"""BASIC assembly design process and steps."""
 
 from typing import List
 
