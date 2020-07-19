@@ -7,16 +7,19 @@
 #  */
 
 
-# import os,sys,inspect
-# currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-# parentdir = os.path.dirname(currentdir)
-# sys.path.insert(0,parentdir) 
+import os,sys,inspect
+currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir)
+sys.path.insert(0,os.path.join(parentdir, 'designs')) 
 
 # import mymodule
+print('currentdir',currentdir)
+print('parentdir',parentdir)
 
+print(__package__ is None)
 
-from script_gen_pipeline.designs.construct import Construct
-from ...designs.construct import Construct
+# from script_gen_pipeline.designs.construct import Construct
+from ..designs.construct import Construct
 # from .protocol.protocol import Basic
 
 if __name__ == "__main__":
