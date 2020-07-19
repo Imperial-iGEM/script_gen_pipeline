@@ -6,21 +6,20 @@
 #  * @desc [description]
 #  */
 
+import sys
+# Yes this is awful but it lets modules from sibling directories be imported  https://docs.python.org/3/tutorial/modules.html#the-module-search-path
+sys.path.insert(0,'../') # print('sys.path', sys.path)
 
-import os,sys,inspect
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(currentdir)
-sys.path.insert(0,os.path.join(parentdir, 'designs')) 
+# Importing modules from sibling directories is bad don't do it - https://alex.dzyoba.com/blog/python-import/
+# import os,sys,inspect
+# currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+# parentdir = os.path.dirname(currentdir)
+# sys.path.insert(0,os.path.join(parentdir)) 
+# print(__package__ is None)
 
-# import mymodule
-print('currentdir',currentdir)
-print('parentdir',parentdir)
 
-print(__package__ is None)
-
-# from script_gen_pipeline.designs.construct import Construct
-from ..designs.construct import Construct
-# from .protocol.protocol import Basic
+from script_gen_pipeline.designs.construct import Construct
+from script_gen_pipeline.protocol.protocol import Basic
 
 if __name__ == "__main__":
 

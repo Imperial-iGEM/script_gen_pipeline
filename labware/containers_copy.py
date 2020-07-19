@@ -3,12 +3,12 @@
 import math
 import string
 from typing import Dict, Iterable, List, Optional, Union, Tuple
-import uuid
+from uuid import uuid4
 
-from Bio.Restriction.Restriction import RestrictionType
-from Bio.SeqRecord import SeqRecord
+# from Bio.Restriction.Restriction import RestrictionType
+# from Bio.SeqRecord import SeqRecord
 
-from .instructions import Instruction
+from script_gen_pipeline.protocol.instructions import Instruction
 from .primers import Primers
 from .reagents import Reagent
 from .species import Species
@@ -72,7 +72,7 @@ class Container:
         contents: Union[Content, List[Content]] = None,
         volumes: List[float] = None,
     ):
-        self.id = uuid.uuid1()
+        self.id = uuid4()
 
         if not contents:
             self.contents: List[Content] = []
@@ -222,7 +222,7 @@ class Fridge(Container):
 
         super().__init__()
 
-        self.id: uuid.UUID = uuid.uuid1()
+        self.id: uuid.UUID = uuid4()
 
         if not isinstance(contents, list):
             self.contents = [contents if contents else []]
