@@ -17,7 +17,7 @@ import os
 # sys.path.insert(0,'../') # print('sys.path', sys.path)
 
 from script_gen_pipeline.protocol.instructions import Instruction, instr_to_txt
-from script_gen_pipeline.labware.containers_copy import Container, Fridge
+from script_gen_pipeline.labware.containers_copy import Container, Fridge, Layout
 from script_gen_pipeline.designs.construct import Construct
 
 
@@ -48,6 +48,8 @@ class Protocol:
         # each of the below is set during a 'run()'
         self.containers: List[Container] = []
         self.instructions: List[Instruction] = []  # assembly instructions
+
+        self.layout: Layout = None
 
         raise NotImplementedError
 
@@ -117,8 +119,6 @@ class Protocol:
             step(self)
 
         return self
-
-    def 
 
     # TODO: this was originally decorated with @property
     def accum_content(self) -> List[Construct]:
@@ -419,7 +419,9 @@ class Basic(Protocol):
 
     def run(self) -> "Protocol":
 
-        for step in self.subprotocols:
+        for subprotocol in self.subprotocols:
+            self = subprotocol(self)
+            self.history.append(subprotocol)
             self.generate_ot_script(self, assay, template_script)
             raise NotImplementedError
 
@@ -449,12 +451,31 @@ class Clip_Reaction(Protocol):
         super().__init__()
 
     def __call__(self, protocol: Protocol):
-        self.steps = [Setup(),
+        """ Running a subprotocol """
+
+        initial_wells = self.make_clip_wells(protocol) 
+        self.steps = [Setup(initial_wells, ),
                     Pipette(),
         ]
 
         for step in self.steps:
             protocol = step(protocol)  # update the protocol at each step
+
+        return protocol
+
+    def make_clip_wells(self, protocol: Protocol) -> List[Container]:
+        """ Make wells with the content being the prefix, part, and suffixes
+        Return: 
+            List of wells 
+        """
+        
+        # Validate
+        protocol.construct.check_module_order()  # Check that modules are ordered
+
+        # 
+
+
+        return Wells
 
 
 

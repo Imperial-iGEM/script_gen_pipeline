@@ -25,15 +25,21 @@ class Construct():
         id: unique internal id for Construct, unrelated to SBOL
         parts: List of all parts in construct without Module hierarchy
         modules: List of modules making up construct, way of grouping
-            parts and translating them into buildeable units
+            parts and translating them into buildeable units. Ordered
+            by index of creation starting at 0.
+        unique_constructs: construct hierarchy of modules > parts > variants
+            is flattened to the Variant level. Each entry in list corresponds
+            to one unique construct.
     """
     def __init__(self, sbol_input):
 
         self.id = uuid4()
         self.parts: List[Part] = self.make_parts(sbol_input)
         self.modules: List[Module] = self.make_modules()
-        self.simp_modules: List[str] = self.simplify_modules()
+        self.simp_modules: List[str] = self._simplify_modules()
         """ Modules in order of construct assembly """
+        self.unique_constructs: List[List[Variant]] = None
+
 
     # The following couple of fxns may be unnecessary if parsing happens in java
     def add_part(self, part: Part, rel_location):
@@ -94,12 +100,30 @@ class Construct():
         is_adjacent = num1 < (num2+1) and num1 > (num2-1)
         return is_adjacent
 
-    def simplify_modules(self):
+    def _simplify_modules(self):
         """ Returns list of module names """
         simplified_modules: List[str] = ''
         for module in self.modules:
             simplified_modules.append(module.name)
         return simplified_modules
+
+    def check_module_order(self):
+        """ Check that the module order makes sense """
+        is_ordered = False
+        last_order_idx = self.modules[0].order_idx
+        for module in self.modules:
+            if last_order_idx != module.order_idx:
+                raise "The modules are not listed in the correct order."
+            last_order_idx = module.order_idx
+
+    def get_unique_constructs(self, 
+                remove_modules: List = None) -> List[List[Variant]]:
+        """ List each unique, full construct possible by flattening the
+        construct by Variants. Optionally use the remove_modules argument
+        to discount specific modules.
+        """
+        unique_constructs: List[List[Variant]] = None
+        return unique_constructs
 
 
 class Module():
