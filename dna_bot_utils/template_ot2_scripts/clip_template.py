@@ -18,7 +18,10 @@ def run(protocol: protocol_api.ProtocolContext):
         water_vols,
         tiprack_type='opentrons_96_tiprack_10ul'):
     
-        """Implements linker ligation reactions using an opentrons OT-2."""
+        """Implements linker ligation reactions using an opentrons OT-2.
+        Args:
+            prefixes_wells, suffixes_wells, parts_wells: 
+            prefixes_plates, suffixes_plates, parts_plates: plate names"""
 
         # Constants
         INITIAL_TIP = 'A1'

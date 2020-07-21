@@ -31,8 +31,9 @@ class Step:
         self.instructions: List[str] = []
         self.inputs: Dict[str, Tuple[Content, float]]
 
-    def __call__(self, protocol: "Protocol"):
+    def __call__(self, protocol: Protocol):
         """Execute a step on a protocol, mutating containers and instructions."""
+        protocol.add_instruction
 
         raise NotImplementedError
 
@@ -42,6 +43,7 @@ class Protocol:
         self.name = ''
         self.construct = construct  # the final construct to be built
         self.steps: List[Step] = []  # list of steps for this assembly
+        self.history: List[Subprotocols] = []  # history of steps run organized by subprotocol
 
         # each of the below is set during a 'run()'
         self.containers: List[Container] = []
@@ -64,7 +66,6 @@ class Protocol:
         # Base on the instructions as generated with each Step
 
         raise NotImplementedError
-
 
     def add_step(self, step: Step) -> "Protocol":
         """Add an instruction step to the protocol for documentation.
@@ -116,6 +117,8 @@ class Protocol:
             step(self)
 
         return self
+
+    def 
 
     # TODO: this was originally decorated with @property
     def accum_content(self) -> List[Construct]:
@@ -421,7 +424,93 @@ class Basic(Protocol):
             raise NotImplementedError
 
 
+class Clip_Reaction(Protocol):
+    """ Requires Prefix, Part, and Suffix (PPS). See in DNAbot repo
+    'generate_constructs_list', where each construct from the
+    rows of construct_list becomes a list of dicts each containing
+    the 'prefix', 'part', and 'suffix' of their construct. 
+    In function 'generate_clips_df', this
+    list of dicts (made to df) are then flattened into one dataframe
+    so you can't tell which PPS's came from which construct.
+    PPS duplicated are removed from df, but each unique PPS has a list
+    saying how many duplicates of it there are, eg how many CLIPs
+    per PPS, which is then divided by the number of final assemblies
+    per clip.
+    That's where the part processing ends, then the explicit wells are 
+    defined. Each PPS CLIP reaction gets a columns with variable rows.
+    From this df holding each unique PPS combo + its duplicates and wells
+    a clips_dict is generated;
+    clips_dict = {'prefixes_wells': [], 'prefixes_plates': [],
+                    'suffixes_wells': [], 'suffixes_plates': [],
+                    'parts_wells': [], 'parts_plates': [], 'parts_vols': [],
+                    'water_vols': []}
+    """
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, protocol: Protocol):
+        self.steps = [Setup(),
+                    Pipette(),
+        ]
+
+        for step in self.steps:
+            protocol = step(protocol)  # update the protocol at each step
+
+
+
+class Setup(Step):
+    def __init__(self):
+        self.layout = Layout()
+        """ Contains containers and robot deck constraints, update each Step. """
+        self.instruments = []
+        """ Includes opentrons load_instrument object, specs and instructions etc. """
+        self.instructions: List[Instruction] = []
+        self.name = 'Set-up'
+        """ Name of this step """
+
+    def __call__(self, protocol):
+        self.layout = Layout(protocol)
+        self.validate(protocol)
+
+        # Tiprack slots
+        total_tips = 4 * len(parts_wells)
+        letter_dict = {'A': 0, 'B': 1, 'C': 2,
+                    'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7}
+        tiprack_1_tips = (
+            13 - int(INITIAL_TIP[1:])) * 8 - letter_dict[INITIAL_TIP[0]]
+        if total_tips > tiprack_1_tips:
+            tiprack_num = 1 + (total_tips - tiprack_1_tips) // 96 + \
+                (1 if (total_tips - tiprack_1_tips) % 96 > 0 else 0)
+        else:
+            tiprack_num = 1
+        slots = CANDIDATE_TIPRACK_SLOTS[:tiprack_num]
+
+        source_plates = {}
+        source_plates_keys = list(set((prefixes_plates + suffixes_plates + parts_plates)))
+        for key in source_plates_keys:
+            source_plates[key] = protocol.load_labware(SOURCE_PLATE_TYPE, key)
+
+        tipracks = [protocol.load_labware(tiprack_type, slot) for slot in slots]
+        if PIPETTE_TYPE != 'p10_single':
+            print('Define labware must be changed to use', PIPETTE_TYPE)
+            exit()
+        pipette = protocol.load_instrument('p10_single', PIPETTE_MOUNT, tip_racks=tipracks)
+        pipette.start_at_tip(tipracks[0].well(INITIAL_TIP))
+        destination_plate = protocol.load_labware(
+            DESTINATION_PLATE_TYPE, DESTINATION_PLATE_POSITION)
+        tube_rack = protocol.load_labware(TUBE_RACK_TYPE, TUBE_RACK_POSITION)
+        master_mix = tube_rack.wells(MASTER_MIX_WELL)
+        water = tube_rack.wells(WATER_WELL)
+        destination_wells = destination_plate.wells(
+            INITIAL_DESTINATION_WELL, length=int(len(parts_wells)))
+
+
+
+
 class Subprotocol(Protocol):
+    """ A subprotocol is equivalent to one run on a liquid handler
+    without human input necessary. The actual steps of the protocol are
+    created here. """
     def __init__(self, name, out_pathname, construct, parameters):
         self.name = name
         self.out_pathname = out_pathname
@@ -548,7 +637,7 @@ class Subprotocol(Protocol):
         else:
             return constructs_list
         
-    def generate_clips_df(constructs_list):
+    def generate_clips_df(self, constructs_list):
         """Generates a dataframe containing information about all the unique CLIP 
         reactions required to synthesise the constructs in constructs_list.
         """

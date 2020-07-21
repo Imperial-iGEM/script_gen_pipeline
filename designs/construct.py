@@ -32,8 +32,10 @@ class Construct():
         self.id = uuid4()
         self.parts: List[Part] = self.make_parts(sbol_input)
         self.modules: List[Module] = self.make_modules()
+        self.simp_modules: List[str] = self.simplify_modules()
         """ Modules in order of construct assembly """
 
+    # The following couple of fxns may be unnecessary if parsing happens in java
     def add_part(self, part: Part, rel_location):
         """ Add a part to the construct. Automatically make module
         from part and update flat list of parts.
@@ -42,7 +44,7 @@ class Construct():
             rel_location: Model order index int of new part location
         """
         self.modules.insert(rel_location, Module(part))
-        update_parts()
+        self.update_parts()
         return self
 
     def rm_part(self, bad_part: Part):
@@ -92,6 +94,13 @@ class Construct():
         is_adjacent = num1 < (num2+1) and num1 > (num2-1)
         return is_adjacent
 
+    def simplify_modules(self):
+        """ Returns list of module names """
+        simplified_modules: List[str] = ''
+        for module in self.modules:
+            simplified_modules.append(module.name)
+        return simplified_modules
+
 
 class Module():
     """ A Module is a unit of assembly. Way of grouping parts """
@@ -99,6 +108,7 @@ class Module():
         self.parts: List[Part] = parts if len(parts) > 1 else [parts]
         self.id = uuid4() 
         self.order_idx = order_idx          # use integers that reflect module order
+        self.name = f'Module {self.order_idx}'
 
 
 class Part:
@@ -120,9 +130,12 @@ class Part:
         self.role = self.get_role(component)
         self.module_id = 0  # Set once Modules are made
         self.id = uuid4()
-        self.buildins: List[BuildIn] = []
 
-        self.range = get_range()
+        self.buildins: List[BuildIn] = []
+        self.prefix: BuildIn = 0
+        self.suffix: BuildIn = 0
+
+        self.range = self.get_range()
 
     def get_module_id(self):
         pass
