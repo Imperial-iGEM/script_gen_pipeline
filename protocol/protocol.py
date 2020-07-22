@@ -424,8 +424,8 @@ class Basic(Protocol):
 
         for subprotocol in self.subprotocols:
             self = subprotocol(self)
+
             self.history.append(subprotocol)
-            self.generate_ot_script(self, assay, template_script)
             raise NotImplementedError
 
 
@@ -457,6 +457,7 @@ class Clip_Reaction(Protocol):
         """ Running a subprotocol """
 
         initial_plates = self.make_clip_plates(protocol) 
+        protocol.layout.add_plates(initial_plates)
         self.steps = [Setup(initial_plates, ),
                     Pipette(),
         ]
@@ -468,26 +469,29 @@ class Clip_Reaction(Protocol):
 
     def make_clip_plates(self, protocol: Protocol) -> List[Container]:
         """ Make plates with content the prefixes, parts, and suffixes
-        for the construct.
+        for the construct. Need to handle overspill of constructs somehow
         Returns: 
-            List of wells 
+            List of plates for this protocol 
         """
+        print("When making plates for the reaction, include handling for \
+            constructs that don't fit in this protocol (assuming 48 parts)")
         
         # Validate
         protocol.construct.check_module_order()  # Check that modules are ordered
-        # Get assemblies
-        unique_constructs = protocol.construct.get_unique_constructs()
+        
+        unique_constructs = protocol.construct.get_unique_constructs()  # Get assemblies
 
         # Update layout
-        plate: Plate = Plate(protocol.parameters)
+        plate = Plate(protocol.parameters)
 
         for construct in unique_constructs:
             """ In DNAbot each sample prefix+part+suffix combo get a row
             (see mplates.final_well()) """
-            wells = self.make_wells(construct)
-            construct = plate.add_wells(well_contents, well_volumes)  # add wells, return any remaining construct
+            if not plate.is_full():
+                wells = self.make_wells(construct)
+                remaining_wells = plate.add_wells(well_contents, well_volumes)  # add wells, return any remaining construct
 
-            if plate.is_full():
+            else:
                 print("NotImplem: layout indexing should be dict organized according to Container type")
                 self.layout[Plate.type].append(plate)
                 plate: Plate = Plate(protocol.parameters)
@@ -495,8 +499,6 @@ class Clip_Reaction(Protocol):
         # Update layout with remaining plate
         if plate.id != self.layout[Plate.type][-1].id:
             self.layout[Plate.type].append(plate)
-
-        
 
         return wells
 
@@ -506,7 +508,7 @@ class Clip_Reaction(Protocol):
                 construct: single unique combination of Variants that make up 
                     an instance of a fully built construct  """
 
-            print("NotImplem: check that well creation makes sense in terms of Clip reaction")
+            print("NotImplem: check that well creation makes sense for Clip protocol")
 
             mixed_wells: List[Container] = []
 
@@ -551,8 +553,6 @@ class Clip_Reaction(Protocol):
                     
             parts = get_nested_parts(construct)
 
-
-
             num_parts = len(parts)
             clip_components: List[List[Variant]] = [[]]
 
@@ -560,18 +560,10 @@ class Clip_Reaction(Protocol):
                 idx = construct.index(part)
                 if idx != 0 or idx != len(construct):
                     prefix = construct[idx - 1]
+                    suffix = construct[idx + 1]
                 clip_component = construct[part]
                 clip_components.append(clip_component)
                 
-
-
-
-
-
-
-            
-
-            
         for plasmids, fragments in goldengate(
             self.design,
             self.enzymes,
