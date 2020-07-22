@@ -25,10 +25,10 @@ class Construct():
 
     Attributes:
         id: unique internal id for Construct, unrelated to SBOL
-        parts: List of all parts in construct without Module hierarchy
         modules: List of modules making up construct, way of grouping
             parts and translating them into buildeable units. Ordered
             by index of creation starting at 0.
+        parts: List of all parts in construct without Module hierarchy
         unique_constructs: construct hierarchy of modules > parts > variants
             is flattened to the Variant level. Each entry in list corresponds
             to one unique construct.
@@ -36,8 +36,11 @@ class Construct():
     def __init__(self, sbol_input):
 
         self.id = uuid4()
-        self.parts: List[Part] = self.make_parts(sbol_input)
-        self.modules: List[Module] = self.make_modules()
+        # self.sbol_input = sbol_input
+        self.modules: List[Module] = self.make_modules(sbol_input)
+        """ Might be able to make modules right away from sbol_input
+        depending on output of SBOL Designer """
+        self.parts: List[Part] = self.make_parts()
         self.simp_modules: List[str] = self._simplify_modules()
         """ Modules in order of construct assembly """
         self.unique_constructs: List[List[Variant]] = None
@@ -62,13 +65,11 @@ class Construct():
                 self.parts.remove(part)
         return self
 
-    def make_parts(self, sbol_input):
+    def make_parts(self):
         parts: List[Part] = []
-        components = self.get_components(sbol_input)
-
-        for component in components:
-            part = Part(component)
-            parts.append(part)
+        for module in self.modules:
+            for part in module.parts:
+                parts.append(part)
         return parts
 
     def update_parts(self):
@@ -83,9 +84,18 @@ class Construct():
     def make_modules(self):
         """ Return all the parts within the final construct
         that are building blocks for assembly """
+
+        parts: List[Part] = []
+        components = self.get_components(sbol_input)
+
+        for component in components:
+            part = Part(component)
+            parts.append(part)
+        return parts
+
         modules: List[Module] = []
 
-        for i, part in enumerate(self.parts):
+        for i, part in enumerate(parts):
             module = Module(i, part)
             modules.append(module)
         return modules
@@ -133,10 +143,18 @@ class Construct():
 class Module():
     """ A Module is a unit of assembly. Way of grouping parts """
     def __init__(self, order_idx, parts):
-        self.parts: List[Part] = parts if len(parts) > 1 else [parts]
+        self.parts: List[Part] = self.make_parts(parts)
         self.id = uuid4() 
         self.order_idx = order_idx          # use integers that reflect module order
         self.name = f'Module {self.order_idx}'
+
+    def make_parts(self, parts):
+        """ Make parts input list type and propagate module id to parts """
+        parts = parts if isinstance(parts, list) else [parts]
+
+        for part in parts:
+            part.set_module_id(self.id)
+        return parts
 
 
 class Part:
@@ -156,7 +174,7 @@ class Part:
         print("Parse component into constituent Variant")
         self.comb_variants: List(Variant) = self.make_variants(component)
         self.role = self.get_role(component)
-        self.module_id = 0  # Set once Modules are made
+        self.module_id = None  # Set once Modules are made
         self.id = uuid4()
 
         print("NotImplem: define roles ('Linker') through ids not strs")
@@ -190,6 +208,16 @@ class Part:
         role = ''
         return role
 
+    def set_module_id(self, module_id):
+        """ Set the module id of the current part and its variants """
+        self.module_id = module_id
+        # propagate to variants
+        temp_variants: List[Variant] = []
+        for variant in self.variants:
+           variant.module_id = module_id
+           temp_variants.append(variant)
+        self.variants = temp_variants
+
     def __len__(self):
         return 1
 
@@ -200,6 +228,7 @@ class Variant:
     Attributes:
         name: Actual part name (eg. BBa_K10002)
         id: Unique id for internal referencing, SBOL unrelated
+        module_id: Unique id of the module this variant is in
         uri: Equivalent to SBOL URI
         sequence: Equivalent to SBOL sequence
         annotattion: Equivalent to SBOL annotations + scars
@@ -209,7 +238,7 @@ class Variant:
         self.name = self.get_name()
 
         self.id = uuid4()
-        self.model_id 
+        self.module_id = None
 
         self.uri = self.get_uri()
         self.sequence = self.get_seq()

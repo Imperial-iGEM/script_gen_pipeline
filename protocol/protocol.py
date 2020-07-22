@@ -523,31 +523,45 @@ class Clip_Reaction(Protocol):
         def get_construct_as_wells(self, construct: List[Variant]) -> List[List[Variant]]:
             """ Expand the list of variants (construct) into a list where
             each component requires a new well in a clip reaction. Keep a level
-            of organization by nesting [prefix, part, suffix]. 
+            of organization by nesting [prefix, part(s), suffix]. 
             Returns: 
                 List[[prefix, part(s), suffix] * num_parts] where each prefix,
                 part, suffix are Variant
             """
 
-            # Construct list of just parts
-            parts: List[Variant] = []
-            for variant in construct:
-                if not variant.is_linker():
-                    parts.append(variant)
+            def get_nested_parts(construct: List[Variant]) -> List[List[Variant]]:
+                """ Return list of non-linker Variants, keep module hierarchy through
+                nesting, so you get parts = [[M1_part, M1_part], [M2_part]] """
+                parts: List[List[Variant]] = [[]]
+                same_module_parts = []
+                # Build up nested list
+                for variant in construct:
+                    if not variant.is_linker():
+                        if not same_module_parts:  # first variant
+                            same_module_parts.append(variant)
+                        else:
+                            if variant.module_id == part[-1].module_id:
+                                same_module_parts.append(variant)
+                            else:
+                                parts.append(part)
+                                part = []
+                    else:
+                        continue
+                return(parts)
+                    
+            parts = get_nested_parts(construct)
+
+
 
             num_parts = len(parts)
             clip_components: List[List[Variant]] = [[]]
 
             for part in parts:
                 idx = construct.index(part)
-                if idx != 0:
-                    construct[idx - 1]
+                if idx != 0 or idx != len(construct):
+                    prefix = construct[idx - 1]
                 clip_component = construct[part]
                 clip_components.append(clip_component)
-                
-
-
-            for index, variant in enumerate(construct):
                 
 
 
