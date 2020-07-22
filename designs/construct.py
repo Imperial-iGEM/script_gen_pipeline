@@ -159,8 +159,6 @@ class Part:
         self.module_id = 0  # Set once Modules are made
         self.id = uuid4()
 
-        self.buildins: List[BuildIn] = []
-
         print("NotImplem: define roles ('Linker') through ids not strs")
         if self.role != "Linker":
             self.prefix = self.id
@@ -209,12 +207,14 @@ class Variant:
     def __init__(self, component):
         self.component = component
         self.name = self.get_name()
+
         self.id = uuid4()
+        self.model_id 
+
         self.uri = self.get_uri()
         self.sequence = self.get_seq()
         self.annotations = self.get_annotations()
-        self.subpart = "DO WE WANT THESE"
-
+        
     def get_name(self):
         warn("NotImplem: get SBOL part name")
         # name = pysbol.get_part(self.component)
@@ -232,14 +232,3 @@ class Variant:
     def get_annotations(self):
         warn("NotImplem: get SBOL annotations")
         return 0
-
-
-class BuildIn(Variant):
-    """ Edits that need to integrate with part, like iP+iS.
-    Might be unnecessary.
-    """
-
-    def __init__(self):
-        self.overlaps = ''
-        self.part_ref: float = 0
-        # """Reference to relative position within the part"""

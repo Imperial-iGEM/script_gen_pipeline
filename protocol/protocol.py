@@ -18,7 +18,7 @@ import os
 
 from script_gen_pipeline.protocol.instructions import Instruction, instr_to_txt
 from script_gen_pipeline.labware.containers_copy import Container, Fridge, Layout, Well
-from script_gen_pipeline.designs.construct import Construct
+from script_gen_pipeline.designs.construct import Construct, Variant
 
 
 class Step:
@@ -487,7 +487,77 @@ class Clip_Reaction(Protocol):
             wells = self.make_wells(construct)
             construct = plate.add_wells(well_contents, well_volumes)  # add wells, return any remaining construct
 
+            if plate.is_full():
+                print("NotImplem: layout indexing should be dict organized according to Container type")
+                self.layout[Plate.type].append(plate)
+                plate: Plate = Plate(protocol.parameters)
+
+        # Update layout with remaining plate
+        if plate.id != self.layout[Plate.type][-1].id:
+            self.layout[Plate.type].append(plate)
+
+        
+
+        return wells
+
+        def make_wells(self, construct: List[Variant]) -> List[Well]:
+            """ Define content and volume for given construct and create Wells.
+            Args:
+                construct: single unique combination of Variants that make up 
+                    an instance of a fully built construct  """
+
+            print("NotImplem: check that well creation makes sense in terms of Clip reaction")
+
             mixed_wells: List[Container] = []
+
+            clip_parts = self.get_construct_as_wells(construct)  # rearrange construct
+
+            for clip_part in clip_parts:
+
+                # add reaction mix and water
+                well_contents, well_volumes = self.mix(clip_part) 
+
+                # create a well that mixes the assembly mix, plasmids, and reagents
+                well = Well(contents=well_contents, volumes=well_volumes)
+
+        def get_construct_as_wells(self, construct: List[Variant]) -> List[List[Variant]]:
+            """ Expand the list of variants (construct) into a list where
+            each component requires a new well in a clip reaction. Keep a level
+            of organization by nesting [prefix, part, suffix]. 
+            Returns: 
+                List[[prefix, part(s), suffix] * num_parts] where each prefix,
+                part, suffix are Variant
+            """
+
+            # Construct list of just parts
+            parts: List[Variant] = []
+            for variant in construct:
+                if not variant.is_linker():
+                    parts.append(variant)
+
+            num_parts = len(parts)
+            clip_components: List[List[Variant]] = [[]]
+
+            for part in parts:
+                idx = construct.index(part)
+                if idx != 0:
+                    construct[idx - 1]
+                clip_component = construct[part]
+                clip_components.append(clip_component)
+                
+
+
+            for index, variant in enumerate(construct):
+                
+
+
+
+
+
+
+            
+
+            
         for plasmids, fragments in goldengate(
             self.design,
             self.enzymes,
@@ -505,24 +575,7 @@ class Clip_Reaction(Protocol):
             self.wells_to_construct[well] = Well(plasmids, [sum(well_volumes)])
             mixed_wells.append(well)
 
-
-            if plate.is_full():
-                print("NotImplem: layout indexing should be dict organized according to Container type")
-                self.layout[Plate.type].append(plate)
-                plate: Plate = Plate(protocol.parameters)
-
-        # Update layout with remaining plate
-        if plate.id != self.layout[Plate.type][-1].id:
-            self.layout[Plate.type].append(plate)
-
-        return sorted(mixed_wells)
-
-        return wells
-
-        def make_wells(self, construct: List[Variant]) -> List[Well]:
-            """ Define content and volume for given construct and create Wells """
-            for variant
-            well_contents, well_volumes = self.mix(construct)
+            return sorted(mixed_wells)
 
 
 
