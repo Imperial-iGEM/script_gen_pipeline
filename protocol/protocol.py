@@ -17,7 +17,7 @@ import os
 # sys.path.insert(0,'../') # print('sys.path', sys.path)
 
 from script_gen_pipeline.protocol.instructions import Instruction, instr_to_txt
-from script_gen_pipeline.labware.containers_copy import Container, Fridge, Layout
+from script_gen_pipeline.labware.containers_copy import Container, Fridge, Layout, Well
 from script_gen_pipeline.designs.construct import Construct
 
 
@@ -50,6 +50,9 @@ class Protocol:
         self.instructions: List[Instruction] = []  # assembly instructions
 
         self.layout: Layout = None
+        """ Instruments / labware layout to keep track of equipment.
+        To be updated within steps, so consider moving layout to
+        Subprotocol """
 
         raise NotImplementedError
 
@@ -453,8 +456,8 @@ class Clip_Reaction(Protocol):
     def __call__(self, protocol: Protocol):
         """ Running a subprotocol """
 
-        initial_wells = self.make_clip_wells(protocol) 
-        self.steps = [Setup(initial_wells, ),
+        initial_plates = self.make_clip_plates(protocol) 
+        self.steps = [Setup(initial_plates, ),
                     Pipette(),
         ]
 
@@ -463,20 +466,98 @@ class Clip_Reaction(Protocol):
 
         return protocol
 
-    def make_clip_wells(self, protocol: Protocol) -> List[Container]:
-        """ Make wells with the content being the prefix, part, and suffixes
-        Return: 
+    def make_clip_plates(self, protocol: Protocol) -> List[Container]:
+        """ Make plates with content the prefixes, parts, and suffixes
+        for the construct.
+        Returns: 
             List of wells 
         """
         
         # Validate
         protocol.construct.check_module_order()  # Check that modules are ordered
+        # Get assemblies
+        unique_constructs = protocol.construct.get_unique_constructs()
 
-        # 
+        # Update layout
+        plate: Plate = Plate(protocol.parameters)
+
+        for construct in unique_constructs:
+            """ In DNAbot each sample prefix+part+suffix combo get a row
+            (see mplates.final_well()) """
+            wells = self.make_wells(construct)
+            construct = plate.add_wells(well_contents, well_volumes)  # add wells, return any remaining construct
+
+            mixed_wells: List[Container] = []
+        for plasmids, fragments in goldengate(
+            self.design,
+            self.enzymes,
+            include=self.include,
+            min_count=self.min_count,
+            linear=self.design.linear,
+        ):
+            # add reaction mix and water
+            well_contents, well_volumes = self.mix(fragments)
+
+            # create a well that mixes the assembly mix, plasmids, and reagents
+            well = Well(contents=well_contents, volumes=well_volumes)
+
+            # used in self.mutate
+            self.wells_to_construct[well] = Well(plasmids, [sum(well_volumes)])
+            mixed_wells.append(well)
 
 
-        return Wells
+            if plate.is_full():
+                print("NotImplem: layout indexing should be dict organized according to Container type")
+                self.layout[Plate.type].append(plate)
+                plate: Plate = Plate(protocol.parameters)
 
+        # Update layout with remaining plate
+        if plate.id != self.layout[Plate.type][-1].id:
+            self.layout[Plate.type].append(plate)
+
+        return sorted(mixed_wells)
+
+        return wells
+
+        def make_wells(self, construct: List[Variant]) -> List[Well]:
+            """ Define content and volume for given construct and create Wells """
+            for variant
+            well_contents, well_volumes = self.mix(construct)
+
+
+
+class Plate(Container):
+    # Move to container.py
+    """ A plate holding a number of Wells """
+    def __init__(self, parameters: Dict = None):
+        super().__init__()
+        print("NotImplem: Plate class to contain Wells and deck nr")
+
+        # default
+        self.shape = (8, 12)
+        self.deck_pos = 0  
+        if parameters:
+            print("NotImplem: Get plate type and well num")
+            self.shape = (8, 12)
+            self.deck_pos = 0
+
+        # init 2D (nested) List
+        self.wells: List[List[Container]] = [[None] * self.shape[1]] * self.shape[0]
+        
+    def is_full(self):
+        """ Check if all wells have been filled """
+        print("Implem: checking that plate is full could done be better")
+        
+        for well in self.wells:
+            if isinstance(well, Container):
+                continue
+            else: 
+                return False
+        return True
+
+    def add_wells(self, content):
+
+        return content
 
 
 class Setup(Step):

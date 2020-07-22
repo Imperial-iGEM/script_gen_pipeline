@@ -6,8 +6,10 @@
 #  * @desc [description]
 #  */
 
-""" Parsing of SBOL input happens through Construct class. 
-Hierarchy of parts here is Construct > Module > Part > Variant == BuildIn 
+""" Parsing of SBOL input happens through Construct class.
+Hierarchy of parts here is Construct > Module > Part > Variant
+Expect construct to come with all necessary parts (eg. prefix / 
+suffix linkers, scars)
 """
 
 from typing import List
@@ -109,7 +111,6 @@ class Construct():
 
     def check_module_order(self):
         """ Check that the module order makes sense """
-        is_ordered = False
         last_order_idx = self.modules[0].order_idx
         for module in self.modules:
             if last_order_idx != module.order_idx:
@@ -119,10 +120,13 @@ class Construct():
     def get_unique_constructs(self, 
                 remove_modules: List = None) -> List[List[Variant]]:
         """ List each unique, full construct possible by flattening the
-        construct by Variants. Optionally use the remove_modules argument
-        to discount specific modules.
+        construct by Variants in order of assembly. Optionally use the 
+        remove_modules argument to remove specific modules.
         """
         unique_constructs: List[List[Variant]] = None
+        print("NotImplem: loop the modules list, within that loop each \
+            part, within that each Variant. Maybe set self.unique_constructs\
+            too?")
         return unique_constructs
 
 
@@ -143,8 +147,8 @@ class Part:
 
     Attributes:
         comb_variants: all combinatorial variations on this part
-        role: same as SBOL role (promoter, DNA, RBS...) but 
-            includes linkers and assembly specific parts 
+        role: same as SBOL role (promoter, DNA, RBS...), but
+            includes linkers (and assembly specific parts)
         module_id: the unique id of a Module that the Part is in
         range: sequence information (relation)
     """
@@ -156,8 +160,11 @@ class Part:
         self.id = uuid4()
 
         self.buildins: List[BuildIn] = []
-        self.prefix: BuildIn = 0
-        self.suffix: BuildIn = 0
+
+        print("NotImplem: define roles ('Linker') through ids not strs")
+        if self.role != "Linker":
+            self.prefix = self.id
+            self.suffix = self.id
 
         self.range = self.get_range()
 
