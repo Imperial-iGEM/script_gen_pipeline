@@ -575,6 +575,7 @@ class Plate(Container):
         """ Adds inputted well to list of wells"""
         if len(self.wells < self.shape[0]*self.shape[1] - 1):
             self.wells.append(well_obj)
+            return len(self.wells)
         else:
             raise RuntimeError(f"No more free wells.")
     
