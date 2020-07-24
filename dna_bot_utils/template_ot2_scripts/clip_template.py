@@ -18,10 +18,7 @@ def run(protocol: protocol_api.ProtocolContext):
         water_vols,
         tiprack_type='opentrons_96_tiprack_10ul'):
     
-        """Implements linker ligation reactions using an opentrons OT-2.
-        Args:
-            prefixes_wells, suffixes_wells, parts_wells: 
-            prefixes_plates, suffixes_plates, parts_plates: plate names"""
+        """Implements linker ligation reactions using an opentrons OT-2."""
 
         # Constants
         INITIAL_TIP = 'A1'
@@ -40,11 +37,14 @@ def run(protocol: protocol_api.ProtocolContext):
         LINKER_MIX_SETTINGS = (1, 3)
         PART_MIX_SETTINGS = (4, 5)
 
-
         # Tiprack slots
         total_tips = 4 * len(parts_wells)
         letter_dict = {'A': 0, 'B': 1, 'C': 2,
                     'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7}
+
+        initial_destination_well_index = letter_dict[INITIAL_DESTINATION_WELL[0]]*12 \
+            + int(INITIAL_DESTINATION_WELL[1]) - 1
+
         tiprack_1_tips = (
             13 - int(INITIAL_TIP[1:])) * 8 - letter_dict[INITIAL_TIP[0]]
         if total_tips > tiprack_1_tips:
@@ -64,17 +64,20 @@ def run(protocol: protocol_api.ProtocolContext):
             print('Define labware must be changed to use', PIPETTE_TYPE)
             exit()
         pipette = protocol.load_instrument('p10_single', PIPETTE_MOUNT, tip_racks=tipracks)
-        pipette.start_at_tip(tipracks[0].well(INITIAL_TIP))
+        #pipette.pick_up_tip(tipracks[0].well(INITIAL_TIP))
         destination_plate = protocol.load_labware(
             DESTINATION_PLATE_TYPE, DESTINATION_PLATE_POSITION)
         tube_rack = protocol.load_labware(TUBE_RACK_TYPE, TUBE_RACK_POSITION)
-        master_mix = tube_rack.wells(MASTER_MIX_WELL)
-        water = tube_rack.wells(WATER_WELL)
-        destination_wells = destination_plate.wells(
-            INITIAL_DESTINATION_WELL, length=int(len(parts_wells)))
+        master_mix = tube_rack.wells_by_name()[MASTER_MIX_WELL]
+        water = tube_rack.wells_by_name()[WATER_WELL]
+        #destination_wells = destination_plate.wells(
+            #INITIAL_DESTINATION_WELL, length=int(len(parts_wells)))
+        destination_wells = destination_plate.wells()[
+            initial_destination_well_index:(initial_destination_well_index + int(len(parts_wells)))]
 
         # Transfers
-        pipette.pick_up_tip()
+        #pipette.pick_up_tip()
+        pipette.pick_up_tip(tipracks[0].well(INITIAL_TIP))
         pipette.transfer(MASTER_MIX_VOLUME, master_mix,
                         destination_wells, new_tip='never')
         pipette.drop_tip()
@@ -89,6 +92,3 @@ def run(protocol: protocol_api.ProtocolContext):
                             destination_wells[clip_num], mix_after=PART_MIX_SETTINGS)
         
     clip(**clips_dict)
-
-    for c in legacy_api.api.robot.commands():
-        print(c)

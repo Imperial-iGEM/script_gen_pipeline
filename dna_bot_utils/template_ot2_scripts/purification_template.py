@@ -75,24 +75,22 @@ def run(protocol: protocol_api.ProtocolContext):
         # Define labware
         mag_mod = protocol.load_module('magnetic module', MAGDECK_POSITION)
         mag_mod.disengage()
-        mag_plate = protocol.load_labware(MIX_PLATE_TYPE, MAGDECK_POSITION, share=True)
-        mix_plate = protocol.load_labware(MIX_PLATE_TYPE, MIX_PLATE_POSITION)
+        #mag_plate = protocol.load_labware(MIX_PLATE_TYPE, MAGDECK_POSITION, share=True)
+        mag_plate = mag_mod.load_labware(MIX_PLATE_TYPE)
+        mix_plate = protocol.load_labware(MIX_PLATE_TYPE, MIX_PLATE_POSITION, label = 'mixing plate')
         reagent_container = protocol.load_labware(
             REAGENT_CONTAINER_TYPE, REAGENT_CONTAINER_POSITION)
         bead_container = protocol.load_labware(BEAD_CONTAINER_TYPE, BEAD_CONTAINER_POSITION)
         col_num = sample_number // 8 + (1 if sample_number % 8 > 0 else 0)
-        samples = [col for col in mag_plate.cols(
-        )[0 + sample_offset:col_num + sample_offset]]
-        output = [col for col in mag_plate.cols(
-        )[6 + sample_offset:col_num + 6 + sample_offset]]
-        mixing = [col for col in mix_plate.cols(
-        )[0 + sample_offset:col_num + sample_offset]]
+        samples = [col for col in mag_plate.rows()[0][sample_offset:sample_offset+col_num]]
+        mixing = [col for col in mix_plate.rows()[0][sample_offset:sample_offset+col_num]]
+        output = [col for col in mag_plate.rows()[0][sample_offset+6:sample_offset+6+col_num]]
 
         # Define reagents and liquid waste
-        liquid_waste = reagent_container.wells(LIQUID_WASTE_WELL)
-        beads = bead_container.wells(BEADS_WELL)
-        ethanol = reagent_container.wells(ethanol_well)
-        elution_buffer = reagent_container.wells(elution_buffer_well)
+        liquid_waste = reagent_container.wells_by_name()[LIQUID_WASTE_WELL]
+        beads = bead_container.wells_by_name()[BEADS_WELL]
+        ethanol = reagent_container.wells_by_name()[ethanol_well]
+        elution_buffer = reagent_container.wells_by_name()[elution_buffer_well]
 
         # Define bead and mix volume
         bead_volume = sample_volume * bead_ratio
@@ -103,17 +101,18 @@ def run(protocol: protocol_api.ProtocolContext):
         total_vol = bead_volume + sample_volume + DEAD_TOTAL_VOL
 
         # Mix beads and PCR samples and incubate
-        for target in range(int(len(samples))):
+        for target, dest in zip(samples, output):
         # Aspirate beads
             pipette.pick_up_tip()
-            pipette.aspirate(bead_volume, beads)
+            pipette.mix(5, mix_vol, beads)
+            pipette.transfer(bead_volume, beads, dest, new_tip = 'never')
+
             for key in SLOW_HEAD_SPEEDS.keys():
                 protocol.max_speeds[key] = SLOW_HEAD_SPEEDS[key]
-
+            
             # Transfer and mix on  mix_plate
-            pipette.aspirate(sample_volume + DEAD_TOTAL_VOL, samples[target])
-            pipette.dispense(total_vol, mixing[target])
-            pipette.mix(IMMOBILISE_MIX_REPS, mix_vol, mixing[target])
+            pipette.transfer(sample_volume + DEAD_TOTAL_VOL, target, dest, new_tip = 'never')
+            pipette.mix(IMMOBILISE_MIX_REPS, mix_vol)
             pipette.blow_out()
 
             # Dispose of tip
@@ -122,7 +121,7 @@ def run(protocol: protocol_api.ProtocolContext):
             pipette.drop_tip()
 
         # Immobilise sample
-        pipette.delay(minutes=incubation_time)
+        protocol.delay(minutes=incubation_time)
 
         # Transfer sample back to magdeck
         for target in range(int(len(samples))):
@@ -131,7 +130,7 @@ def run(protocol: protocol_api.ProtocolContext):
 
         # Engagae MagDeck and incubate
         mag_mod.engage(height=MAGDECK_HEIGHT)
-        pipette.delay(minutes=settling_time)
+        protocol.delay(minutes=settling_time)
         
         # Remove supernatant from magnetic beads
         for target in samples:
@@ -142,13 +141,13 @@ def run(protocol: protocol_api.ProtocolContext):
         for cycle in range(2):
             for target in samples:
                 pipette.transfer(ETHANOL_VOL, ethanol, target, air_gap=air_vol)
-            pipette.delay(minutes=WASH_TIME)
+            protocol.delay(minutes=WASH_TIME)
             for target in samples:
                 pipette.transfer(ETHANOL_VOL + ETHANOL_DEAD_VOL, target, liquid_waste,
                                 air_gap=air_vol)
 
         # Dry at RT
-        pipette.delay(minutes=drying_time)
+        protocol.delay(minutes=drying_time)
 
         # Disengage MagDeck
         mag_mod.disengage()
@@ -163,11 +162,11 @@ def run(protocol: protocol_api.ProtocolContext):
                             target, mix_after=(ELUTION_MIX_REPS, mix_vol))
 
         # Incubate at RT for "elution_time" minutes
-        pipette.delay(minutes=elution_time)
+        protocol.delay(minutes=elution_time)
 
         # Engagae MagDeck for 1 minute and remain engaged for DNA elution
         mag_mod.engage(height=MAGDECK_HEIGHT)
-        pipette.delay(minutes=ELUTANT_SEP_TIME)
+        protocol.delay(minutes=ELUTANT_SEP_TIME)
 
         # Transfer clean PCR product to a new well
         for target, dest in zip(samples, output):
@@ -180,6 +179,3 @@ def run(protocol: protocol_api.ProtocolContext):
 
     magbead(sample_number=sample_number,
             ethanol_well=ethanol_well, elution_buffer_well='A1')
-    
-    for c in legacy_api.api.robot.commands():
-        print(c)
