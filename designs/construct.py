@@ -12,8 +12,9 @@ Expect construct to come with all necessary parts (eg. prefix /
 suffix linkers, scars)
 """
 
-from typing import List
+from typing import List, Tuple
 from warnings import warn
+from itertools import product
 import numpy as np
 from uuid import uuid4
 
@@ -37,7 +38,7 @@ class Variant:
 
         self.id = uuid4()
         self.name = self.get_name()
-        self.module_id = None
+        self.module_id = None  # we probs don't need both
         self.module_order_idx = None
 
         self.uri = self.get_uri()
@@ -108,6 +109,12 @@ class Part:
         role = 'Yuh'
         return role
 
+    def set_role(self, role):
+        """ Set the role of the part and propagate to all variants """
+        self.role = role
+        for i, _var_ in enumerate(self.variants):
+            self.variants[i].role = role
+
     def is_linker(self):
         """ Check if this part's role is 'Linker' """
         warn("make sure is_linker() matches the same fxn in Variant")
@@ -120,10 +127,13 @@ class Part:
         variants: List(Variant) = []
         comb_ders = self.unpack_comb_ders(component)
 
-        for single_comb_def in comb_ders:
-            variant = Variant(single_comb_def)
-            variant.role = self.role
-            variants.append(variant)
+        for comb_def in comb_ders:
+            # make single_comb_def iterable
+            comb_def = comb_def if isinstance(comb_def, list) else [comb_def]
+            for single_comb_def in comb_def:
+                variant = Variant(single_comb_def)
+                variant.role = self.role
+                variants.append(variant)
         return variants
 
     def unpack_comb_ders(self, component):
@@ -137,14 +147,10 @@ class Part:
         """ Set the module id of the current part and its variants """
         self.module_id = module_id
         # propagate to variants
-        temp_variants: List[Variant] = []
-        for variant in self.variants:
-            variant.module_id = module_id
+        for i, _var_ in enumerate(self.variants):
+            self.variants[i].module_id = module_id
             for key, value in kwargs.items():
-                variant.key = value
-                # variant.module_order_idx = module_order_idx
-            temp_variants.append(variant)
-        self.variants = temp_variants
+                setattr(self.variants[i], key, value)  # set property 'key' to value
 
     def __len__(self):
         print(f"Using the length of Part {self.role}: {self.id}")
@@ -169,9 +175,10 @@ class Module():
         """ Make parts input list type and propagate module info to parts """
         parts = parts if isinstance(parts, list) else [parts]
 
-        for part in parts:
-            part.set_module_info(module_id=self.id, 
+        for i, _part_ in enumerate(parts):
+            parts[i].set_module_info(module_id=self.id, 
                 module_order_idx=self.order_idx)
+        print('[make_parts_list] parts[0].variants[0].module_order_idx', parts[0].variants[0].module_order_idx)
         return parts
 
 
@@ -280,15 +287,25 @@ class Construct():
             last_order_idx = module.order_idx
 
     def get_unique_constructs(self, 
-                remove_modules: List = None) -> List[List[Variant]]:
+                remove_modules: List = None) -> List[Tuple[Variant]]:
         """ List each unique, full construct possible by flattening the
         construct by Variants in order of assembly. Optionally use the 
         remove_modules argument to remove specific modules.
         """
-        unique_constructs: List[List[Variant]] = None
-        print("NotImplem: loop the modules list, within that loop each \
-            part, within that each Variant. Maybe set self.unique_constructs\
-            too?")
+
+        all_variant_lists = []
+        # Loop long for: all_variant_lists.append(modules[all].parts[all].variants)
+        for module in self.modules:
+            for part in module.parts:
+                all_variant_lists.append(part.variants)
+                for variant in part.variants:
+                    print('[get_unique_constructs] variant.role', variant.role)
+
+        unique_constructs = list(product(*all_variant_lists)) 
+        # while unique_constructs not isinstance(unique_constructs, list)
+        # self.unique_constructs = unique_constructs
+        
+        print("""NotImplem: [get_unique_constructs] Maybe set self.unique_constructs too?""")
         return unique_constructs
 
     def _set_pref_suff(self):
@@ -306,15 +323,11 @@ class Construct():
                         if mod_idx != 0:
                             if self.modules[mod_idx-1].parts[0].is_linker():
                                 variant.prefix = self.modules[mod_idx-1].order_idx
-                                print(variant.prefix)
                             if mod_idx != (len(self.modules)-1):
                                 if self.modules[mod_idx+1].parts[0].is_linker():
                                     variant.suffix = self.modules[mod_idx+1].order_idx
-                                    print(variant.suffix)
                     # Update
                     self.modules[mod_idx].parts[part_idx].variants[var_idx] = variant
-
-        print('variant.prefix',variant.prefix, 'variant.suffix', variant.suffix)
         return self
 
     def _simplify_modules(self):

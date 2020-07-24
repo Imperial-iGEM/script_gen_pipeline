@@ -6,7 +6,7 @@
 #  * @desc [description]
 #  */
 
-from typing import List, Iterable
+from typing import List, Iterable, Dict
 import csv
 import pandas as pd
 import numpy as np
@@ -17,7 +17,7 @@ import os
 # sys.path.insert(0,'../') # print('sys.path', sys.path)
 
 from script_gen_pipeline.protocol.instructions import Instruction, instr_to_txt
-from script_gen_pipeline.labware.containers_copy import Container, Fridge, Layout, Well
+from script_gen_pipeline.labware.containers_copy import Container, Fridge, Well
 from script_gen_pipeline.designs.construct import Construct, Variant
 
 
@@ -481,15 +481,99 @@ class Clip_Reaction(Protocol):
         
         unique_constructs = protocol.construct.get_unique_constructs()  # Get assemblies
 
-        # Update layout
-        plate = Plate(protocol.parameters)
+        all_clip_wells: Dict[List[Variant], List[Well]] = {}
 
+        # Update layout
+        for construct in unique_constructs:
+            """ In DNAbot each sample prefix+part+suffix combo get a row
+            (see mplates.final_well()) """
+            wells = self.make_clip_wells(construct)
+            all_clip_wells[construct].append(wells)
+
+        remaining_wells = self.layout.make_layout(all_clip_wells)
+
+        return remaining_wells
+
+    def make_clip_wells(self, construct: List[Variant]) -> List[Well]:
+        """ Define content and volume for given construct and create Wells.
+        Returns the wells for this construct clip reaction
+        Args:
+            construct: single unique combination of Variants that make up 
+                an instance of a fully built construct  """
+
+        print("[make_clip_wells] NotImplem: check that well creation makes sense for Clip protocol")
+
+        mixed_wells: List[Container] = []
+        clip_parts = self.get_construct_as_wells(construct)  # rearrange construct
+
+        for clip_part in clip_parts:
+            # add reaction mix and water
+            # TODO: define Clip reaction mix for each well
+            well_contents, well_volumes = self.mix(clip_part)
+
+            # create a well that mixes the assembly mix, plasmids, and reagents
+            well = Well(contents=well_contents, volumes=well_volumes)
+
+            # used in self.mutate
+            self.wells_to_construct[well] = Well(plasmids, [sum(well_volumes)])
+            mixed_wells.append(well)
+
+        return mixed_wells  # sorted(mixed_wells)
+
+    def get_construct_as_wells(self, construct: List[Variant]) -> List[List[Variant]]:
+        """ Expand the list of variants (construct) into a list where
+        each component requires a new well in a clip reaction. Keep a level
+        of organization by nesting [prefix, part(s), suffix]. Necessary
+        because the prefix + suffix need to be multiplied for each part.
+        Returns:
+            List[[prefix, part(s), suffix] * num_parts] where element
+            is a each prefix, part, suffix (each are a Variant)
+        """    
+
+        def get_linker_variant(variant_list: List[Variant], linker_id):
+            """ Return the variant in the variant_list that corresponds 
+            to the linker_id
+            Args: 
+                linker_id: prefix or suffix id
+                variant_list: list of variant, eg a construct instance """
+            for var_idx, variant in enumerate(variant_list):
+                if linker_id == (variant.prefix):
+                    return variant_list[var_idx-1]
+                if linker_id == (variant.suffix):
+                    return variant_list[var_idx+1]
+            warn("[protocol.py get_variant] variant wrong")
+            return 0
+
+        clip_components: List[List[Variant]] = [[]]
+        for variant in construct:
+            if not variant.is_linker():
+                prefix = get_linker_variant(construct, variant.prefix)
+                suffix = get_linker_variant(construct, variant.suffix)
+                clip_components.append([prefix, variant, suffix])
+        clip_components.pop(0)  # ugly i know
+        return clip_components
+
+
+class Layout:
+    def __init__(self, parameters: Dict = None):
+        self.robot_deck = init_deck(parameters)
+        plate = Plate(parameters)
+
+    def init_deck(self, parameters):
+        """ Initialise a deck for one liquid handler.
+        Returns:
+            slots: unit of space that can hold a Container """
+        print("[make_deck] NotImplem")
+        slots: List[Container] = [[None]]*parameters['num_slots']
+        return slots
+
+    def make_layout(self, all_wells: List[Well]):
         for construct in unique_constructs:
             """ In DNAbot each sample prefix+part+suffix combo get a row
             (see mplates.final_well()) """
             if not plate.is_full():
-                wells = self.make_wells(construct)
-                remaining_wells = plate.add_wells(well_contents, well_volumes)  # add wells, return any remaining construct
+                wells = self.make_clip_wells(construct)
+                remaining_wells = plate.add_wells(wells)  # add wells, return any remaining construct
 
             else:
                 print("NotImplem: layout indexing should be dict organized according to Container type")
@@ -499,73 +583,6 @@ class Clip_Reaction(Protocol):
         # Update layout with remaining plate
         if plate.id != self.layout[Plate.type][-1].id:
             self.layout[Plate.type].append(plate)
-
-        return wells
-
-        def make_wells(self, construct: List[Variant]) -> List[Well]:
-            """ Define content and volume for given construct and create Wells.
-            Args:
-                construct: single unique combination of Variants that make up 
-                    an instance of a fully built construct  """
-
-            print("NotImplem: check that well creation makes sense for Clip protocol")
-
-            mixed_wells: List[Container] = []
-
-            clip_parts = self.get_construct_as_wells(construct)  # rearrange construct
-
-            for clip_part in clip_parts:
-
-                # add reaction mix and water
-                well_contents, well_volumes = self.mix(clip_part) 
-
-                # create a well that mixes the assembly mix, plasmids, and reagents
-                well = Well(contents=well_contents, volumes=well_volumes)
-
-        def get_construct_as_wells(self, construct: List[Variant]) -> List[List[Variant]]:
-            """ Expand the list of variants (construct) into a list where
-            each component requires a new well in a clip reaction. Keep a level
-            of organization by nesting [prefix, part(s), suffix]. Necessary 
-            because the prefix + suffix need to be multiplied for each part.
-            Returns:
-                List[[prefix, part(s), suffix] * num_parts] where each prefix,
-                part, suffix are Variant
-            """    
-            clip_components: List[List[Variant]] = [[]]
-            num_parts = len(construct)
-            for index, variant in enumerate(construct):
-                # get prefix index
-                temp_variant = variant
-                prefix_idx = index
-                suffix_idx = index
-                while (not temp_variant.is_linker()) and (not prefix_idx == 0):
-                    temp_variant = construct[prefix_idx]
-                    prefix_idx -= 1
-                while (not temp_variant.is_linker()) and (not suffix_idx == (0 or num_parts)):
-                    temp_variant = construct[suffix_idx]
-                    suffix_idx += 1
-                clip_components.append(construct[prefix_idx:suffix_idx+1])
-
-                
-        for plasmids, fragments in goldengate(
-            self.design,
-            self.enzymes,
-            include=self.include,
-            min_count=self.min_count,
-            linear=self.design.linear,
-        ):
-            # add reaction mix and water
-            well_contents, well_volumes = self.mix(fragments)
-
-            # create a well that mixes the assembly mix, plasmids, and reagents
-            well = Well(contents=well_contents, volumes=well_volumes)
-
-            # used in self.mutate
-            self.wells_to_construct[well] = Well(plasmids, [sum(well_volumes)])
-            mixed_wells.append(well)
-
-            return sorted(mixed_wells)
-
 
 
 class Plate(Container):
