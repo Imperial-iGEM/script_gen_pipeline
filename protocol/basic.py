@@ -114,7 +114,11 @@ class Basic(Protocol):
     
     def _create_source_plate(self):
         # list of modules -> plate
+        # is this necessary?
+        # what is the mix?
         source_plate = Plate()
+        for module in self.construct.modules:
+            # need to create new df saying module with corresponding index
         return source_plate
 
     def _create_mixed_wells(self):
@@ -125,9 +129,9 @@ class Basic(Protocol):
             modules.append(clip_info['prefixes'])
             modules.append(clip_info['parts'])
             modules.append(clip_info['suffixes'])
-            # need to make mix compatible
-            #well_contents, well_volumes = self.mix(modules)
-            #mixed_wells.add_wells(well_contents, well_volumes)
+            well_contents, well_volumes = self.mix(modules)
+            indx = mixed_wells.add_wells(Well(well_contents, well_volumes))
+            # add row to clips_df saying index...
         return mixed_wells
 
 
