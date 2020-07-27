@@ -286,6 +286,7 @@ class Construct():
                 raise "The modules are not listed in the correct order."
             last_order_idx = module.order_idx
 
+    # TESTED: 23.07.20
     def get_unique_constructs(self, 
                 remove_modules: List = None) -> List[Tuple[Variant]]:
         """ List each unique, full construct possible by flattening the
@@ -308,6 +309,7 @@ class Construct():
         print("""NotImplem: [get_unique_constructs] Maybe set self.unique_constructs too?""")
         return unique_constructs
 
+    # TESTED: 23.07.20
     def _set_pref_suff(self):
         """ Set the prefix and suffix of each variant as the module id.
         Propagate the module id of linker prefix and suffixes to 

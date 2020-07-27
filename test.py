@@ -168,12 +168,50 @@ GOLDEN_GATE_MIX = Mix(
 mix = GOLDEN_GATE_MIX
 
 # TEST
-clip_component = clip_components[0]
-well_contents, well_volumes = mix(clip_component)
+all_wells: List[List[Well]] = [[]]
+for con_i, construct in enumerate(constructs):
+    for variant in construct:
+        if not variant.is_linker():
+            prefix = get_variant(construct, variant.prefix)
+            suffix = get_variant(construct, variant.suffix)
+            clip_components.append([prefix, variant, suffix])
+    clip_components.pop(0)
+    print(con_i, 'clip_components', clip_components)
 
-# create a well that mixes the assembly mix, plasmids, and reagents
-well = Well(contents=well_contents, volumes=well_volumes)
+    wells = []
+    for clip_part in clip_components:
+        # add reaction mix and water
+        # TODO: define Clip reaction mix for each well
+        well_contents, well_volumes = mix(clip_part)
 
-print('well_contents', well_contents)
-print('well_volumes', well_volumes)
-print('well.volumes', well.volumes)
+        # create a well that mixes the assembly mix, plasmids, and reagents
+        well = Well(contents=well_contents, volumes=well_volumes)
+
+        wells.append(well)
+    all_wells.append(wells)
+all_wells.pop(0)
+
+# TEST 
+n = [(0, 'e'), (3, 'e'), 'a', 'e', 't', 's', 'n']
+for k in n:
+    e = n.pop(-1)
+    print('e', e)
+    print('k', k)
+
+shape = (8, 12)
+layout_wells: List[List[Container]] = [[None] * shape[1]] * shape[0]
+row_count = 0
+col_count = 0
+remaining_wells = all_wells
+for i in range(len(remaining_wells)):
+    added_well = remaining_wells[i].pop(0)
+    if not layout_wells[row_count][col_count]:
+        layout_wells[row_count][col_count] = added_well
+        col_count += 1
+        if col_count >= shape[1]:
+            col_count = 0
+            row_count += 1
+            if row_count >= shape[0]:
+                break
+print('remaining_wells:', len(remaining_wells), remaining_wells)          
+print(layout_wells)

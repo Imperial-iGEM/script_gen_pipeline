@@ -391,320 +391,13 @@ class Protocol:
         return len(self.steps)
 
 
-class Clone(Protocol):
-    def __init__(self, design):
-        self.design = design
-        super().__init__()
-
-
-# Taken from DNAbot app
-CLIP_OUT_PATH = '1_clip.ot2.py'
-MAGBEAD_OUT_PATH = '2_purification.ot2.py'
-F_ASSEMBLY_OUT_PATH = '3_assembly.ot2.py'
-TRANS_SPOT_OUT_PATH = '4_transformation.ot2.py'
-basic_steps = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
-
-
-class Basic(Protocol):
-    """ Specific protocol run of BASIC Assembly as described
-    in DNAbot
-    """
-
-    def __init__(self):
-        super().__init__()
-
-        self.parameters = {
-            'SPOTTING_VOLS_DICT': {2: 5, 3: 5, 4: 5, 5: 5, 6: 5, 7: 5},
-            'SOURCE_DECK_POS': ['2', '5', '8', '7', '10', '11'],
-            'ethanol_well_for_stage_2': "A11"
-        }
-        self.scripts = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
-        self.subprotocols = [Subprotocol(str(script), script, self.construct, self.parameters) for script in self.scripts]
-
-    def run(self) -> "Protocol":
-
-        for subprotocol in self.subprotocols:
-            self = subprotocol(self)
-
-            self.history.append(subprotocol)
-            raise NotImplementedError
-
-
-CLIP_MIX = Mix(
-    {Reagent("master mix"): 4.0, Variant: 2.0},
-    fill_with=Reagent("water"),
-    fill_to=20.0,
-)
-
-
-class Clip_Reaction(Protocol):
-    """ Requires Prefix, Part, and Suffix (PPS). See in DNAbot repo
-    'generate_constructs_list', where each construct from the
-    rows of construct_list becomes a list of dicts each containing
-    the 'prefix', 'part', and 'suffix' of their construct. 
-    In function 'generate_clips_df', this
-    list of dicts (made to df) are then flattened into one dataframe
-    so you can't tell which PPS's came from which construct.
-    PPS duplicated are removed from df, but each unique PPS has a list
-    saying how many duplicates of it there are, eg how many CLIPs
-    per PPS, which is then divided by the number of final assemblies
-    per clip.
-    That's where the part processing ends, then the explicit wells are 
-    defined. Each PPS CLIP reaction gets a columns with variable rows.
-    From this df holding each unique PPS combo + its duplicates and wells
-    a clips_dict is generated;
-    clips_dict = {'prefixes_wells': [], 'prefixes_plates': [],
-                    'suffixes_wells': [], 'suffixes_plates': [],
-                    'parts_wells': [], 'parts_plates': [], 'parts_vols': [],
-                    'water_vols': []}
-    """
-    def __init__(self):
-        super().__init__()
-
-        self.mix = CLIP_MIX
-
-    def __call__(self, protocol: Protocol):
-        """ Running a subprotocol """
-
-        initial_plates = self.make_clip_plates(protocol) 
-        protocol.layout.add_plates(initial_plates)
-        self.steps = [Setup(initial_plates, ),
-                    Pipette(),
-        ]
-
-        for step in self.steps:
-            protocol = step(protocol)  # update the protocol at each step
-
-        return protocol
-
-    def make_clip_plates(self, protocol: Protocol) -> List[Container]:
-        """ Make plates with content the prefixes, parts, and suffixes
-        for the construct. Need to handle overspill of constructs somehow
-        Returns: 
-            List of plates for this protocol 
-        """
-        print("When making plates for the reaction, include handling for \
-            constructs that don't fit in this protocol (assuming 48 parts)")
-        
-        # Validate
-        protocol.construct.check_module_order()  # Check that modules are ordered
-        
-        unique_constructs = protocol.construct.get_unique_constructs()  # Get assemblies
-
-        all_clip_wells: Dict[List[Variant], List[Well]] = {}
-
-        # Update layout
-        for construct in unique_constructs:
-            """ In DNAbot each sample prefix+part+suffix combo get a row
-            (see mplates.final_well()) """
-            wells = self.make_clip_wells(construct)
-            all_clip_wells[construct].append(wells)
-
-        remaining_wells = self.layout.make_layout(all_clip_wells)
-
-        return remaining_wells
-
-    def make_clip_wells(self, construct: List[Variant]) -> List[Well]:
-        """ Define content and volume for given construct and create Wells.
-        Returns the wells for this construct clip reaction
-        Args:
-            construct: single unique combination of Variants that make up 
-                an instance of a fully built construct  """
-
-        print("[make_clip_wells] NotImplem: check that well creation makes sense for Clip protocol")
-
-        mixed_wells: List[Container] = []
-        clip_parts = self.get_construct_as_wells(construct)  # rearrange construct
-
-        for clip_part in clip_parts:
-            # add reaction mix and water
-            # TODO: define Clip reaction mix for each well
-            well_contents, well_volumes = self.mix(clip_part)
-
-            # create a well that mixes the assembly mix, plasmids, and reagents
-            well = Well(contents=well_contents, volumes=well_volumes)
-
-            self.wells_to_construct[well] = Well(plasmids, [sum(well_volumes)])
-            mixed_wells.append(well)
-
-        return mixed_wells  # sorted(mixed_wells)
-
-    def get_construct_as_wells(self, construct: List[Variant]) -> List[List[Variant]]:
-        """ Expand the list of variants (construct) into a list where
-        each component requires a new well in a clip reaction. Keep a level
-        of organization by nesting [prefix, part(s), suffix]. Necessary
-        because the prefix + suffix need to be multiplied for each part.
-        Returns:
-            List[[prefix, part(s), suffix] * num_parts] where element
-            is a each prefix, part, suffix (each are a Variant)
-        """    
-
-        def get_linker_variant(variant_list: List[Variant], linker_id):
-            """ Return the variant in the variant_list that corresponds 
-            to the linker_id
-            Args: 
-                linker_id: prefix or suffix id
-                variant_list: list of variant, eg a construct instance """
-            for var_idx, variant in enumerate(variant_list):
-                if linker_id == (variant.prefix):
-                    return variant_list[var_idx-1]
-                if linker_id == (variant.suffix):
-                    return variant_list[var_idx+1]
-            warn("[protocol.py get_variant] variant wrong")
-            return 0
-
-        clip_components: List[List[Variant]] = [[]]
-        for variant in construct:
-            if not variant.is_linker():
-                prefix = get_linker_variant(construct, variant.prefix)
-                suffix = get_linker_variant(construct, variant.suffix)
-                clip_components.append([prefix, variant, suffix])
-        clip_components.pop(0)  # ugly i know
-        return clip_components
-
-
-class Layout:
-    """ Handles movement of reagents and materials in a protocol """
-    def __init__(self, parameters: Dict = None):
-        self.robot_deck = self.init_deck(parameters)
-        plate = Plate(parameters)
-
-    def init_deck(self, parameters):
-        """ Initialise a deck for one liquid handler.
-        Returns:
-            slots: unit of space that can hold a Container """
-        print("[make_deck] NotImplem")
-        slots: List[Container] = [[None]]*parameters['num_slots']
-        slots[0] = Plate()
-
-        print("NotImplem: layout indexing should be dict organized according to Container type")
-        plate: Plate = Plate(protocol.parameters)
-
-        # OLD: Update layout with remaining plate
-        if plate.id != self.layout[Plate.type][-1].id:
-            self.layout[Plate.type].append(plate)
-
-        return slots
-
-    def make_layout(self, wells: List[Well]):
-        """ Make the protocol's layout from input list of wells. """
-        remaining_wells = wells
-        for plate in ((i, p) for (i, p) in enumerate(self.robot_deck) if isinstance(p, Plate)):
-            """ plate: (slot_index, plate_from_slot) """
-            deck_index = plate[0]
-            remaining_wells = plate.add_wells(remaining_wells)
-            self.robot_deck[deck_index] = plate
-
-        return remaining_wells
-
-    def append(self, plate: Plate):
-        """ Fill the last free Plate in the robot_deck with input plate """
-        print("[layout append] NotImplem: add input plate to robot deck")
-        plate 
-        
-
-class Plate(Container):
-    # Move to container.py
-    """ A plate holding a number of Wells """
-    def __init__(self, parameters: Dict = None):
-        super().__init__()
-        print("NotImplem: Plate class to contain Wells and deck nr")
-        
-        self.name = 'Control'
-
-        # default
-        self.shape = (8, 12)
-        self.deck_pos = 0  
-        if parameters:
-            print("[Plate init] NotImplem: Get plate type and well num")
-            self.shape = (8, 12)
-            self.deck_pos = 0
-
-        # init 2D (nested) List
-        self.wells: List[List[Container]] = [[None] * self.shape[1]] * self.shape[0]
-        
-    def is_full(self):
-        """ Check if all wells have been filled """
-        print("Implem: checking that plate is full could done be better")
-        
-        for well in self.wells:
-            if isinstance(well, Container):
-                continue
-            else: 
-                return False
-        return True
-
-    def add_wells(self, wells):
-        """ Fill the Plate with the input Wells """
-
-
-        return wells
-
-
-
-class Well(Container):
-    """A single well in a plate."""
-
-    volume_max = 200
-    volume_dead = 15
-
-
-class Setup(Step):
-    def __init__(self):
-        self.layout = Layout()
-        """ Contains containers and robot deck constraints, update each Step. """
-        self.instruments = []
-        """ Includes opentrons load_instrument object, specs and instructions etc. """
-        self.instructions: List[Instruction] = []
-        self.name = 'Set-up'
-        """ Name of this step """
-
-    def __call__(self, protocol):
-        self.layout = Layout(protocol)
-        self.validate(protocol)
-
-        # Tiprack slots
-        total_tips = 4 * len(parts_wells)
-        letter_dict = {'A': 0, 'B': 1, 'C': 2,
-                    'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7}
-        tiprack_1_tips = (
-            13 - int(INITIAL_TIP[1:])) * 8 - letter_dict[INITIAL_TIP[0]]
-        if total_tips > tiprack_1_tips:
-            tiprack_num = 1 + (total_tips - tiprack_1_tips) // 96 + \
-                (1 if (total_tips - tiprack_1_tips) % 96 > 0 else 0)
-        else:
-            tiprack_num = 1
-        slots = CANDIDATE_TIPRACK_SLOTS[:tiprack_num]
-
-        source_plates = {}
-        source_plates_keys = list(set((prefixes_plates + suffixes_plates + parts_plates)))
-        for key in source_plates_keys:
-            source_plates[key] = protocol.load_labware(SOURCE_PLATE_TYPE, key)
-
-        tipracks = [protocol.load_labware(tiprack_type, slot) for slot in slots]
-        if PIPETTE_TYPE != 'p10_single':
-            print('Define labware must be changed to use', PIPETTE_TYPE)
-            exit()
-        pipette = protocol.load_instrument('p10_single', PIPETTE_MOUNT, tip_racks=tipracks)
-        pipette.start_at_tip(tipracks[0].well(INITIAL_TIP))
-        destination_plate = protocol.load_labware(
-            DESTINATION_PLATE_TYPE, DESTINATION_PLATE_POSITION)
-        tube_rack = protocol.load_labware(TUBE_RACK_TYPE, TUBE_RACK_POSITION)
-        master_mix = tube_rack.wells(MASTER_MIX_WELL)
-        water = tube_rack.wells(WATER_WELL)
-        destination_wells = destination_plate.wells(
-            INITIAL_DESTINATION_WELL, length=int(len(parts_wells)))
-
-
-
-
 class Subprotocol(Protocol):
     """ A subprotocol is equivalent to one run on a liquid handler
     without human input necessary. The actual steps of the protocol are
     created here. """
-    def __init__(self, name, out_pathname, construct, parameters):
+    def __init__(self, name, parameters):
         self.name = name
-        self.out_pathname = out_pathname
+        # self.out_pathname = out_pathname
 
         self.input_construct_path = construct.input_construct_path
         self.output_sources_paths = construct.output_sources_paths
@@ -715,54 +408,8 @@ class Subprotocol(Protocol):
 
         self.template_script = self._get_template()
 
-    def _get_basic_kwargs(self):
-        """ Get the keyword arguments unique to each 
-        BASIC subprotocol (clip, purification...) needed
-        for the creation of opentrons scripts. Completely based
-        on DNAbot's opentrons script generator reqs and inputs.
-
-        Returns: 
-            Keyword arguments unique to the name of the subprotocol
-        """
-
-        print('Processing input csv files...')
-        constructs_list = self.generate_constructs_list(
-            self.input_construct_path)
-        clips_df = self.generate_clips_df(constructs_list)
-        sources_dict = self.generate_sources_dict(self.output_sources_paths)
-
-        # calculate OT2 script variables
-        print('Calculating OT-2 variables...')
-        clips_dict = self.generate_clips_dict(clips_df, sources_dict)
-        magbead_sample_number = clips_df['number'].sum()
-        final_assembly_dict = self.generate_final_assembly_dict(
-            constructs_list, clips_df)
-        final_assembly_tipracks = self.calculate_final_assembly_tipracks(
-            final_assembly_dict)
-        spotting_tuples = self.generate_spotting_tuples(constructs_list,
-                                                        self.parameters['SPOTTING_VOLS_DICT'])
-
-        # TODO: make human clear which basic step corresponds to each case
-        if self.name == str(basic_steps[0]):
-            return {'clips_dict': clips_dict}
-        if self.name == str(basic_steps[1]):
-            return {'sample_number': magbead_sample_number,
-                    # THIS IS FOR THE ETHANOL TROUGH WELL IN STEP 2
-                    'ethanol_well': self.parameters['ethanol_well_for_stage_2']}
-        if self.name == str(basic_steps[2]):
-            return {'final_assembly_dict': final_assembly_dict,
-                    'tiprack_num': final_assembly_tipracks}
-        if self.name == str(basic_steps[3]):
-            return {'spotting_tuples': spotting_tuples,
-                    # Deep well plate for Soc media during
-                    # soc_well="A{}".format(dnabotinst.soc_column))
-                    # previously the information about the location of the
-                    'soc_well': "A1"}
-        else:
-            assert self.name in basic_steps, f"The subprotocol {self.name} is not one of the possible protocols {basic_steps}"
-            return 0
-
     def _get_template(self):
+        print("NotImplem: connect script template creation to BASIC")
         if self.name == str(basic_steps[0]):
             return 'assembly_template.py'
         if self.name == str(basic_steps[1]):
@@ -827,142 +474,6 @@ class Subprotocol(Protocol):
                 'Number of constructs exceeds maximum. Reduce construct number in construct.csv.')
         else:
             return constructs_list
-        
-    def generate_clips_df(self, constructs_list):
-        """Generates a dataframe containing information about all the unique CLIP 
-        reactions required to synthesise the constructs in constructs_list.
-        """
-        merged_construct_dfs = pd.concat(constructs_list, ignore_index=True)
-        unique_clips_df = merged_construct_dfs.drop_duplicates()
-        unique_clips_df = unique_clips_df.reset_index(drop=True)
-        clips_df = unique_clips_df.copy()
-
-        # Error
-        if len(unique_clips_df.index) > MAX_CLIPS:
-            raise ValueError(
-                'Number of CLIP reactions exceeds 48. Reduce number of constructs in construct.csv.')
-
-        # Count number of each CLIP reaction
-        clip_count = np.zeros(len(clips_df.index))
-        for i, unique_clip in unique_clips_df.iterrows():
-            for _, clip in merged_construct_dfs.iterrows():
-                if unique_clip.equals(clip):
-                    clip_count[i] = clip_count[i] + 1
-        clip_count = clip_count // FINAL_ASSEMBLIES_PER_CLIP + 1
-        clips_df['number'] = [int(i) for i in clip_count.tolist()]
-
-        # Associate well/s for each CLIP reaction
-        clips_df['mag_well'] = pd.Series(['0'] * len(clips_df.index),
-                                        index=clips_df.index)
-        for index, number in clips_df['number'].iteritems():
-            if index == 0:
-                mag_wells = []
-                for x in range(number):
-                    mag_wells.append(final_well(x + 1 + 48))
-                clips_df.at[index, 'mag_well'] = tuple(mag_wells)
-            else:
-                mag_wells = []
-                for x in range(number):
-                    well_count = clips_df.loc[
-                        :index - 1, 'number'].sum() + x + 1 + 48
-                    mag_wells.append(final_well(well_count))
-                clips_df.at[index, 'mag_well'] = tuple(mag_wells)
-        return clips_df
-
-    def generate_sources_dict(paths):
-        """Imports csvs files containing a series of parts/linkers with 
-        corresponding information into a dictionary where the key corresponds with
-        part/linker and the value contains a tuple of corresponding information.
-        Args:
-            paths (list): list of strings each corresponding to a path for a 
-                        sources csv file. 
-        """
-        sources_dict = {}
-        for deck_index, path in enumerate(paths):
-            print(path)
-            with open(path, 'r') as csvfile:
-                csv_reader = csv.reader(csvfile)
-                for index, source in enumerate(csv_reader):
-                    if index != 0:
-                        csv_values = source[1:]
-                        csv_values.append(SOURCE_DECK_POS[deck_index])
-                        sources_dict[str(source[0])] = tuple(csv_values)
-        return sources_dict
-
-    def generate_clips_dict(clips_df, sources_dict):
-        """Using clips_df and sources_dict, returns a clips_dict which acts as the 
-        sole variable for the opentrons script "clip.ot2.py".
-        """
-        max_part_vol = CLIP_VOL - (T4_BUFF_VOL + BSAI_VOL + T4_LIG_VOL
-                                + CLIP_MAST_WATER + 2)
-        clips_dict = {'prefixes_wells': [], 'prefixes_plates': [],
-                    'suffixes_wells': [], 'suffixes_plates': [],
-                    'parts_wells': [], 'parts_plates': [], 'parts_vols': [],
-                    'water_vols': []}
-
-        # Generate clips_dict from args
-        try:
-            for _, clip_info in clips_df.iterrows():
-                prefix_linker = clip_info['prefixes']
-                clips_dict['prefixes_wells'].append([sources_dict[prefix_linker][0]]
-                                                    * clip_info['number'])
-                clips_dict['prefixes_plates'].append(
-                    [handle_2_columns(sources_dict[prefix_linker])[2]] * clip_info['number'])
-                suffix_linker = clip_info['suffixes']
-                clips_dict['suffixes_wells'].append([sources_dict[suffix_linker][0]]
-                                                    * clip_info['number'])
-                clips_dict['suffixes_plates'].append(
-                    [handle_2_columns(sources_dict[suffix_linker])[2]] * clip_info['number'])
-                part = clip_info['parts']
-                clips_dict['parts_wells'].append([sources_dict[part][0]]
-                                                * clip_info['number'])
-                clips_dict['parts_plates'].append([handle_2_columns(sources_dict[part])[2]]
-                                                * clip_info['number'])
-                if not sources_dict[part][1]:
-                    clips_dict['parts_vols'].append([DEFAULT_PART_VOL] *
-                                                    clip_info['number'])
-                    clips_dict['water_vols'].append([max_part_vol - DEFAULT_PART_VOL]
-                                                    * clip_info['number'])
-                else:
-                    part_vol = round(
-                        PART_PER_CLIP / float(sources_dict[part][1]), 1)
-                    if part_vol < MIN_VOL:
-                        part_vol = MIN_VOL
-                    elif part_vol > max_part_vol:
-                        part_vol = max_part_vol
-                    water_vol = max_part_vol - part_vol
-                    clips_dict['parts_vols'].append(
-                        [part_vol] * clip_info['number'])
-                    clips_dict['water_vols'].append(
-                        [water_vol] * clip_info['number'])
-        except KeyError:
-            sys.exit('likely part/linker not listed in sources.csv')
-        for key, value in clips_dict.items():
-            clips_dict[key] = [item for sublist in value for item in sublist]
-        return clips_dict
-
-    def generate_final_assembly_dict(constructs_list, clips_df):
-        """Using constructs_list and clips_df, returns a dictionary of final
-        assemblies with keys defining destination plate well positions and values
-        indicating which clip reaction wells are used.
-        """
-        final_assembly_dict = {}
-        clips_count = np.zeros(len(clips_df.index))
-        for construct_index, construct_df in enumerate(constructs_list):
-            construct_well_list = []
-            for _, clip in construct_df.iterrows():
-                clip_info = clips_df[(clips_df['prefixes'] == clip['prefixes']) &
-                                    (clips_df['parts'] == clip['parts']) &
-                                    (clips_df['suffixes'] == clip['suffixes'])]
-                clip_wells = clip_info.at[clip_info.index[0], 'mag_well']
-                clip_num = int(clip_info.index[0])
-                clip_well = clip_wells[int(clips_count[clip_num] //
-                                        FINAL_ASSEMBLIES_PER_CLIP)]
-                clips_count[clip_num] = clips_count[clip_num] + 1
-                construct_well_list.append(clip_well)
-            final_assembly_dict[final_well(
-                construct_index + 1)] = construct_well_list
-        return final_assembly_dict
 
     def calculate_final_assembly_tipracks(final_assembly_dict):
         """Calculates the number of final assembly tipracks required ensuring
@@ -1051,6 +562,332 @@ class Subprotocol(Protocol):
                     if index >= function_start - 1:
                         wf.write(line)
         return this_object_output_path
+
+
+class Clone(Protocol):
+    def __init__(self, design):
+        self.design = design
+        super().__init__()
+
+
+# Taken from DNAbot app
+CLIP_OUT_PATH = '1_clip.ot2.py'
+MAGBEAD_OUT_PATH = '2_purification.ot2.py'
+F_ASSEMBLY_OUT_PATH = '3_assembly.ot2.py'
+TRANS_SPOT_OUT_PATH = '4_transformation.ot2.py'
+basic_steps = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
+
+
+class Basic(Protocol):
+    """ Specific protocol run of BASIC Assembly as described
+    in DNAbot
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.parameters = {
+            'SPOTTING_VOLS_DICT': {2: 5, 3: 5, 4: 5, 5: 5, 6: 5, 7: 5},
+            'SOURCE_DECK_POS': ['2', '5', '8', '7', '10', '11'],
+            'ethanol_well_for_stage_2': "A11"
+        }
+        self.scripts = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
+        self.subprotocols = [Subprotocol(str(script), script, self.construct, self.parameters) for script in self.scripts]
+
+    def run(self) -> "Protocol":
+
+        for subprotocol in self.subprotocols:
+            self = subprotocol(self)
+
+            self.history.append(subprotocol)
+            raise NotImplementedError
+
+
+CLIP_MIX = Mix(
+    {Reagent("master mix"): 4.0, Variant: 2.0},
+    fill_with=Reagent("water"),
+    fill_to=20.0,
+)
+
+
+class Clip_Reaction(Subprotocol):
+    """ Requires Prefix, Part, and Suffix (PPS). See in DNAbot repo
+    'generate_constructs_list', where each construct from the
+    rows of construct_list becomes a list of dicts each containing
+    the 'prefix', 'part', and 'suffix' of their construct. 
+    In function 'generate_clips_df', this
+    list of dicts (made to df) are then flattened into one dataframe
+    so you can't tell which PPS's came from which construct.
+    PPS duplicated are removed from df, but each unique PPS has a list
+    saying how many duplicates of it there are, eg how many CLIPs
+    per PPS, which is then divided by the number of final assemblies
+    per clip.
+    That's where the part processing ends, then the explicit wells are 
+    defined. Each PPS CLIP reaction gets a columns with variable rows.
+    From this df holding each unique PPS combo + its duplicates and wells
+    a clips_dict is generated;
+    clips_dict = {'prefixes_wells': [], 'prefixes_plates': [],
+                    'suffixes_wells': [], 'suffixes_plates': [],
+                    'parts_wells': [], 'parts_plates': [], 'parts_vols': [],
+                    'water_vols': []}
+    """
+    def __init__(self, name='Clip', parameters: Dict = {}):
+        super().__init__(name, parameters)
+
+        self.mix = CLIP_MIX
+        print("[Clip] NotImplem: init parameters to be defined")
+
+    def __call__(self, protocol: Protocol):
+        """ Running a subprotocol """
+
+        self.clip_wells = self.make_clip_plates(protocol) 
+        self.steps = [Setup(initial_plates, ),
+                    Pipette(),
+        ]
+
+        for step in self.steps:
+            protocol = step(protocol)  # update the protocol at each step
+
+        return protocol
+
+    # TESTED 22.07.20
+    def make_clip_plates(self, protocol: Protocol) -> List[Container]:
+        """ Make plates with content the prefixes, parts, and suffixes
+        for the construct. Overspill wells that don't fit onto this 
+        liquid handler run into the Layout.
+        Returns: 
+            List of plates for this protocol 
+        """
+        print("When making plates for the reaction, include handling for \
+            constructs that don't fit in this protocol (assuming 48 parts)")
+        
+        # Validate
+        protocol.construct.check_module_order()  # Check that modules are ordered
+        
+        unique_constructs = protocol.construct.get_unique_constructs()  # Get assemblies
+
+        all_clip_wells: List[List[Well]] = [[]]
+        """ Contains all wells needed for this run. Each element is list of
+        wells for one construct, which need to happen in the same Opentrons rxn """
+
+        # Update layout
+        for construct in unique_constructs:
+            """ In DNAbot each sample prefix+part+suffix combo get a row
+            (see mplates.final_well()) """
+            wells = self.make_clip_wells(construct)
+            all_clip_wells.append(wells)
+
+        self.layout.make_layout(all_clip_wells)
+
+        return all_clip_wells
+
+    # TESTED 22.07.20
+    def make_clip_wells(self, construct: List[Variant]) -> List[Well]:
+        """ Define content and volume for given construct and create Wells.
+        Returns the wells for this construct clip reaction
+        Args:
+            construct: single unique combination of Variants that make up 
+                an instance of a fully built construct  """
+
+        print("[make_clip_wells] NotImplem: check that well creation makes sense for Clip protocol")
+
+        mixed_wells: List[Container] = []
+        clip_parts = self.get_construct_as_wells(construct)  # rearrange construct
+
+        for clip_part in clip_parts:
+            # add reaction mix and water
+            # TODO: define Clip reaction mix for each well
+            well_contents, well_volumes = self.mix(clip_part)
+
+            # create a well that mixes the assembly mix, plasmids, and reagents
+            well = Well(contents=well_contents, volumes=well_volumes)
+
+            mixed_wells.append(well)
+
+        return mixed_wells  # sorted(mixed_wells)
+
+    # TESTED 22.07.20
+    def get_construct_as_wells(self, construct: List[Variant]) -> List[List[Variant]]:
+        """ Expand the list of variants (construct) into a list where
+        each component requires a new well in a clip reaction. Keep a level
+        of organization by nesting [prefix, part(s), suffix]. Necessary
+        because the prefix + suffix need to be multiplied for each part.
+        Returns:
+            List[[prefix, part(s), suffix] * num_parts] where element
+            is a each prefix, part, suffix (each are a Variant)
+        """
+
+        def get_linker_variant(variant_list: List[Variant], linker_id):
+            """ Return the variant in the variant_list that corresponds
+            to the linker_id
+            Args:
+                linker_id: prefix or suffix id
+                variant_list: list of variant, eg a construct instance """
+            for var_idx, variant in enumerate(variant_list):
+                if linker_id == (variant.prefix):
+                    return variant_list[var_idx-1]
+                if linker_id == (variant.suffix):
+                    return variant_list[var_idx+1]
+            warn("[protocol.py get_variant] variant wrong")
+            return 0
+
+        clip_components: List[List[Variant]] = [[]]
+        for variant in construct:
+            if not variant.is_linker():
+                prefix = get_linker_variant(construct, variant.prefix)
+                suffix = get_linker_variant(construct, variant.suffix)
+                clip_components.append([prefix, variant, suffix])
+        clip_components.pop(0)  # ugly i know
+        return clip_components
+
+
+class Layout:
+    """ Handles movement of reagents and materials in a protocol """
+    def __init__(self, parameters: Dict = None):
+        self.robot_deck = self.init_deck(parameters)
+        self.overflow_wells: List[List[Wells]] = [[]]
+
+    def init_deck(self, parameters):
+        """ Initialise a deck for one liquid handler.
+        Returns:
+            slots: unit of space that can hold a Container """
+        print("[make_deck] NotImplem")
+        slots: List[Container] = [[None]]*parameters['num_slots']
+        slots[0] = Plate()
+
+        print("NotImplem: layout indexing should be dict organized according to Container type")
+        plate: Plate = Plate(protocol.parameters)
+
+        # OLD: Update layout with remaining plate
+        if plate.id != self.layout[Plate.type][-1].id:
+            self.layout[Plate.type].append(plate)
+
+        return slots
+
+    def make_layout(self, wells: List[List[Well]]):
+        """ Make the protocol's layout from input list of wells. """
+        remaining_wells = wells
+        for plate in ((i, p) for (i, p) in enumerate(self.robot_deck) if isinstance(p, Plate)):
+            """ plate: (slot_index, plate_from_slot) """
+            deck_index = plate[0]
+            remaining_wells = plate.add_wells(remaining_wells)
+            self.robot_deck[deck_index] = plate
+
+        self.overflow = remaining_wells
+
+    def append(self, plate: Plate):
+        """ Fill the last free Plate in the robot_deck with input plate """
+        print("[layout append] NotImplem: add input plate to robot deck")
+        plate 
+        
+
+class Plate(Container):
+    # Move to container.py
+    """ A plate holding a number of Wells """
+    def __init__(self, parameters: Dict = None):
+        super().__init__()
+        print("NotImplem: Plate class to contain Wells and deck nr")
+        
+        self.name = 'Control'
+
+        # default
+        self.shape = (8, 12)
+        self.deck_pos = 0
+        # should get plate labels from parameters
+        self.rows = ['A','B','C','D','E','F','G','H']
+        if parameters:
+            print("[Plate init] NotImplem: Get plate type and well num")
+            self.shape = (8, 12)
+            self.deck_pos = 0
+
+        # init 2D (nested) List
+        self.wells: List[List[Container]] = [[None] * self.shape[1]] * self.shape[0]
+        
+    def is_full(self):
+        """ Check if all wells have been filled """
+        print("Implem: checking that plate is full could done be better")
+        
+        for well in self.wells:
+            if isinstance(well, Container):
+                continue
+            else: 
+                return False
+        return True
+
+    # TESTED: 27.07.20
+    def add_wells(self, remaining_wells: List[List[Well]]):
+        """ Fill the Plate with the input Wells by row """
+        row_count = 0
+        col_count = 0
+        for i in range(len(remaining_wells)):
+            added_well = remaining_wells[i].pop(0)
+            if not self.wells[row_count][col_count]:
+                self.wells[row_count][col_count] = added_well
+                col_count += 1
+                if col_count >= self.shape[1]:
+                    col_count = 0
+                    row_count += 1
+                    if row_count >= self.shape[0]:
+                        break
+
+        print(len(remaining_wells), 'constructs moved to next plate')
+        return remaining_wells
+
+
+
+class Well(Container):
+    """A single well in a plate."""
+
+    volume_max = 200
+    volume_dead = 15
+
+
+class Setup(Step):
+    def __init__(self):
+        self.layout = Layout()
+        """ Contains containers and robot deck constraints, update each Step. """
+        self.instruments = []
+        """ Includes opentrons load_instrument object, specs and instructions etc. """
+        self.instructions: List[Instruction] = []
+        self.name = 'Set-up'
+        """ Name of this step """
+
+    def __call__(self, protocol):
+        self.layout = Layout(protocol)
+        self.validate(protocol)
+
+        # Tiprack slots
+        total_tips = 4 * len(parts_wells)
+        letter_dict = {'A': 0, 'B': 1, 'C': 2,
+                    'D': 3, 'E': 4, 'F': 5, 'G': 6, 'H': 7}
+        tiprack_1_tips = (
+            13 - int(INITIAL_TIP[1:])) * 8 - letter_dict[INITIAL_TIP[0]]
+        if total_tips > tiprack_1_tips:
+            tiprack_num = 1 + (total_tips - tiprack_1_tips) // 96 + \
+                (1 if (total_tips - tiprack_1_tips) % 96 > 0 else 0)
+        else:
+            tiprack_num = 1
+        slots = CANDIDATE_TIPRACK_SLOTS[:tiprack_num]
+
+        source_plates = {}
+        source_plates_keys = list(set((prefixes_plates + suffixes_plates + parts_plates)))
+        for key in source_plates_keys:
+            source_plates[key] = protocol.load_labware(SOURCE_PLATE_TYPE, key)
+
+        tipracks = [protocol.load_labware(tiprack_type, slot) for slot in slots]
+        if PIPETTE_TYPE != 'p10_single':
+            print('Define labware must be changed to use', PIPETTE_TYPE)
+            exit()
+        pipette = protocol.load_instrument('p10_single', PIPETTE_MOUNT, tip_racks=tipracks)
+        pipette.start_at_tip(tipracks[0].well(INITIAL_TIP))
+        destination_plate = protocol.load_labware(
+            DESTINATION_PLATE_TYPE, DESTINATION_PLATE_POSITION)
+        tube_rack = protocol.load_labware(TUBE_RACK_TYPE, TUBE_RACK_POSITION)
+        master_mix = tube_rack.wells(MASTER_MIX_WELL)
+        water = tube_rack.wells(WATER_WELL)
+        destination_wells = destination_plate.wells(
+            INITIAL_DESTINATION_WELL, length=int(len(parts_wells)))
+
 
 
 
