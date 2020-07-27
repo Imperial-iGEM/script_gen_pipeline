@@ -47,7 +47,8 @@ def run(protocol: protocol_api.ProtocolContext):
         tube_rack = protocol.load_labware(TUBE_RACK_TYPE, TUBE_RACK_POSITION)
         #magbead_plate = mag_mod.load_labware(MAG_PLATE_TYPE)
         magbead_plate = protocol.load_labware(MAG_PLATE_TYPE, MAG_PLATE_POSITION)
-        destination_plate = protocol.load_labware(DESTINATION_PLATE_TYPE, TEMPDECK_SLOT, share=True)
+        #destination_plate = protocol.load_labware(DESTINATION_PLATE_TYPE, TEMPDECK_SLOT, share=True)
+        destination_plate = temp_mod.load_labware(DESTINATION_PLATE_TYPE)
         temp_mod.set_temperature(TEMP)
 
         # Master mix transfers
@@ -58,21 +59,19 @@ def run(protocol: protocol_api.ProtocolContext):
         master_mix_well_letters = ['A', 'B', 'C', 'D']
         for x in unique_assemblies_lens:
             master_mix_well = master_mix_well_letters[(x - 1) // 6] + str(x - 1)
-            destination_inds = [i for i, lens in enumerate(
-                final_assembly_lens) if lens == x]
-            destination_wells = np.array(
-                [key for key, value in list(final_assembly_dict.items())])
-            destination_wells = list(destination_wells[destination_inds])
+            destination_plate_wells = [destination_plate.wells_by_name()[key] 
+                for key, value in list(final_assembly_dict.items())]
             pipette.pick_up_tip()
-            pipette.transfer(TOTAL_VOL - x * PART_VOL, tube_rack.wells(master_mix_well),
-                            destination_plate.wells(destination_wells),
+            pipette.transfer(TOTAL_VOL - x * PART_VOL, tube_rack.wells_by_name()[master_mix_well],
+                            destination_plate_wells,
                             new_tip='never')
             pipette.drop_tip()
 
         # Part transfers
         for key, values in list(final_assembly_dict.items()):
-            pipette.transfer(PART_VOL, magbead_plate.wells(values),
-                            destination_plate.wells(key), mix_after=MIX_SETTINGS,
+            mag_bead_wells = [magbead_plate.wells_by_name()[value] for value in values]
+            pipette.transfer(PART_VOL, mag_bead_wells,
+                            destination_plate.wells_by_name()[key], mix_after=MIX_SETTINGS,
                             new_tip='always')
 
         temp_mod.deactivate()
@@ -80,6 +79,3 @@ def run(protocol: protocol_api.ProtocolContext):
 
     final_assembly(final_assembly_dict=final_assembly_dict,
                tiprack_num=tiprack_num)
-    
-    for c in legacy_api.api.robot.commands():
-        print(c)
