@@ -9,13 +9,14 @@ from uuid import uuid4
 # from Bio.SeqRecord import SeqRecord
 
 from script_gen_pipeline.protocol.instructions import Instruction
-from .primers import Primers
-from .reagents import Reagent
-from .species import Species
+# from .primers import Primers
+from script_gen_pipeline.protocol.biochem_utils import Reagent, Species
+from script_gen_pipeline.designs.construct import Variant
 
-Content = Union[SeqRecord, RestrictionType, Primers, Reagent, Species]
+Content = Union[Variant, Reagent, Species]
 """The content of a container can be a sequence, enzyme, or primers."""
 
+Primers = Union[List, Variant]
 
 def content_id(content: Content) -> str:
     """Return a "unique" ID for each set of content.

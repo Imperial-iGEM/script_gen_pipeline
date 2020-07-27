@@ -4,20 +4,20 @@ import inspect
 import logging
 from typing import Dict, Iterable, List, Tuple, Set, Any
 
-from .containers import Content
-from .reagents import Reagent
-from .species import Species
+from script_gen_pipeline.labware.containers_copy import Content
+from script_gen_pipeline.protocol.biochem_utils import Reagent, Species
 
 
 class Mix:
-    """An assembly Mix to specify how Reagents/Species/SeqRecords should come together
+    """An assembly Mix to specify how Reagents/Species/Variants should come
+    together. Basically unchanged from synbio.
 
-    'mix' is a parameter that accepts a Dict mapping each of the mix's ingredients
+    mix: parameter that accepts a Dict mapping each of the mix's ingredients
     to the volume in microliters of that ingredient to the mixture container.
 
     Below is an example for NEB's GoldenGate Assembly Mix (E1600) where
     there is 2 uL per DNA sample, 4 uL for assembly master mix, and the well
-    is filled to 20 uL
+    is filled to 20 uL (SeqRecord is roughly equivalent to Variant)
 
     ```python
     Mix(
@@ -28,9 +28,9 @@ class Mix:
     ```
 
     Keyword Args:
-        mix: map from mix content to the
-            volume required per well. Mix content can be a type (like SeqRecord)
-            or an actual reagent (like Reagent("water")) (default: {None})
+        mix: map from mix content to the volume required per well. Mix 
+            content can be a type (like Variant) or an actual reagent 
+            (like Reagent("water")) (default: {None})
         fill_with: Content to fill rest of container to
             fill_to with (default: {None})
         fill_to: the volume to fill the container to (default: {0})

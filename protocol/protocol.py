@@ -17,6 +17,7 @@ import os
 # sys.path.insert(0,'../') # print('sys.path', sys.path)
 
 from script_gen_pipeline.protocol.instructions import Instruction, instr_to_txt
+from script_gen_pipeline.protocol.mix_copy import Mix
 from script_gen_pipeline.labware.containers_copy import Container, Fridge, Well
 from script_gen_pipeline.designs.construct import Construct, Variant
 

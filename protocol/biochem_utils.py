@@ -8,6 +8,9 @@
 """ Contains classes supporting definitions of chemicals """
 # TODO: Add Primers?
 
+from typing import Union
+from script_gen_pipeline.designs.construct import Construct
+
 
 class Reagent:
     """A Reagent. Ex T4 Ligase, Buffer, etc.
