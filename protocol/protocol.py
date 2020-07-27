@@ -641,6 +641,7 @@ class Clip_Reaction(Subprotocol):
         """ Running a subprotocol """
 
         self.clip_wells = self.make_clip_plates(protocol) 
+        # TODO: Test that layout updated in make_clip_plates
         self.steps = [Setup(initial_plates, ),
                     Pipette(),
         ]
@@ -770,8 +771,9 @@ class Layout:
         for plate in ((i, p) for (i, p) in enumerate(self.robot_deck) if isinstance(p, Plate)):
             """ plate: (slot_index, plate_from_slot) """
             deck_index = plate[0]
-            remaining_wells = plate.add_wells(remaining_wells)
-            self.robot_deck[deck_index] = plate
+            if remaining_wells:
+                remaining_wells = plate.add_wells(remaining_wells)
+                self.robot_deck[deck_index] = plate
 
         self.overflow = remaining_wells
 
