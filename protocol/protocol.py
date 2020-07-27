@@ -429,6 +429,13 @@ class Basic(Protocol):
             raise NotImplementedError
 
 
+CLIP_MIX = Mix(
+    {Reagent("master mix"): 4.0, Variant: 2.0},
+    fill_with=Reagent("water"),
+    fill_to=20.0,
+)
+
+
 class Clip_Reaction(Protocol):
     """ Requires Prefix, Part, and Suffix (PPS). See in DNAbot repo
     'generate_constructs_list', where each construct from the
@@ -452,6 +459,8 @@ class Clip_Reaction(Protocol):
     """
     def __init__(self):
         super().__init__()
+
+        self.mix = CLIP_MIX
 
     def __call__(self, protocol: Protocol):
         """ Running a subprotocol """
@@ -514,7 +523,6 @@ class Clip_Reaction(Protocol):
             # create a well that mixes the assembly mix, plasmids, and reagents
             well = Well(contents=well_contents, volumes=well_volumes)
 
-            # used in self.mutate
             self.wells_to_construct[well] = Well(plasmids, [sum(well_volumes)])
             mixed_wells.append(well)
 
@@ -555,8 +563,9 @@ class Clip_Reaction(Protocol):
 
 
 class Layout:
+    """ Handles movement of reagents and materials in a protocol """
     def __init__(self, parameters: Dict = None):
-        self.robot_deck = init_deck(parameters)
+        self.robot_deck = self.init_deck(parameters)
         plate = Plate(parameters)
 
     def init_deck(self, parameters):
@@ -565,25 +574,33 @@ class Layout:
             slots: unit of space that can hold a Container """
         print("[make_deck] NotImplem")
         slots: List[Container] = [[None]]*parameters['num_slots']
-        return slots
+        slots[0] = Plate()
 
-    def make_layout(self, all_wells: List[Well]):
-        for construct in unique_constructs:
-            """ In DNAbot each sample prefix+part+suffix combo get a row
-            (see mplates.final_well()) """
-            if not plate.is_full():
-                wells = self.make_clip_wells(construct)
-                remaining_wells = plate.add_wells(wells)  # add wells, return any remaining construct
+        print("NotImplem: layout indexing should be dict organized according to Container type")
+        plate: Plate = Plate(protocol.parameters)
 
-            else:
-                print("NotImplem: layout indexing should be dict organized according to Container type")
-                self.layout[Plate.type].append(plate)
-                plate: Plate = Plate(protocol.parameters)
-
-        # Update layout with remaining plate
+        # OLD: Update layout with remaining plate
         if plate.id != self.layout[Plate.type][-1].id:
             self.layout[Plate.type].append(plate)
 
+        return slots
+
+    def make_layout(self, wells: List[Well]):
+        """ Make the protocol's layout from input list of wells. """
+        remaining_wells = wells
+        for plate in ((i, p) for (i, p) in enumerate(self.robot_deck) if isinstance(p, Plate)):
+            """ plate: (slot_index, plate_from_slot) """
+            deck_index = plate[0]
+            remaining_wells = plate.add_wells(remaining_wells)
+            self.robot_deck[deck_index] = plate
+
+        return remaining_wells
+
+    def append(self, plate: Plate):
+        """ Fill the last free Plate in the robot_deck with input plate """
+        print("[layout append] NotImplem: add input plate to robot deck")
+        plate 
+        
 
 class Plate(Container):
     # Move to container.py
@@ -591,12 +608,14 @@ class Plate(Container):
     def __init__(self, parameters: Dict = None):
         super().__init__()
         print("NotImplem: Plate class to contain Wells and deck nr")
+        
+        self.name = 'Control'
 
         # default
         self.shape = (8, 12)
         self.deck_pos = 0  
         if parameters:
-            print("NotImplem: Get plate type and well num")
+            print("[Plate init] NotImplem: Get plate type and well num")
             self.shape = (8, 12)
             self.deck_pos = 0
 
@@ -614,9 +633,19 @@ class Plate(Container):
                 return False
         return True
 
-    def add_wells(self, content):
+    def add_wells(self, wells):
+        """ Fill the Plate with the input Wells """
 
-        return content
+
+        return wells
+
+
+
+class Well(Container):
+    """A single well in a plate."""
+
+    volume_max = 200
+    volume_dead = 15
 
 
 class Setup(Step):
