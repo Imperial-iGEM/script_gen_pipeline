@@ -6,7 +6,7 @@
 #  * @desc [description]
 #  */
 
-from typing import List, Iterable
+from typing import List, Iterable, Tuple, Dict
 import csv
 import pandas as pd
 import numpy as np
@@ -16,8 +16,8 @@ import os
 # # Yes this is awful but it lets modules from sibling directories be imported https://docs.python.org/3/tutorial/modules.html#the-module-search-path
 # sys.path.insert(0,'../') # print('sys.path', sys.path)
 
-from script_gen_pipeline.protocol.instructions import Instruction, instr_to_txt
-from script_gen_pipeline.labware.containers_copy import Container, Fridge, Layout, Well
+from script_gen_pipeline.protocol.instructions import Instruction, instr_to_txt, Temperature
+from script_gen_pipeline.labware.containers import Container, Fridge, Layout, Well
 from script_gen_pipeline.designs.construct import Construct, Variant
 
 
@@ -39,9 +39,9 @@ class Step:
 
 
 class Protocol:
-    def __init__(self, construct: Construct = Construct()):
+    def __init__(self, constructs: List[Construct] = [Construct()]):
         self.name = ''
-        self.construct = construct  # the final construct to be built
+        self.constructs = constructs  # the final construct to be built
         self.steps: List[Step] = []  # list of steps for this assembly
         self.history: List[Subprotocols] = []  # history of steps run organized by subprotocol
 
@@ -113,7 +113,7 @@ class Protocol:
         """ Core running of a protocol """
 
         # all input records, each start out assigned to a single Fridge source
-        records = self.construct.get_all_modules()
+        records = [construct.get_all_modules() for construct in self.constructs]
 
         # update containers
         self.containers = [Fridge(r) for r in records]  # everything comes from fridge
@@ -403,32 +403,6 @@ F_ASSEMBLY_OUT_PATH = '3_assembly.ot2.py'
 TRANS_SPOT_OUT_PATH = '4_transformation.ot2.py'
 basic_steps = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
 
-
-class Basic(Protocol):
-    """ Specific protocol run of BASIC Assembly as described
-    in DNAbot
-    """
-
-    def __init__(self):
-        super().__init__()
-
-        self.parameters = {
-            'SPOTTING_VOLS_DICT': {2: 5, 3: 5, 4: 5, 5: 5, 6: 5, 7: 5},
-            'SOURCE_DECK_POS': ['2', '5', '8', '7', '10', '11'],
-            'ethanol_well_for_stage_2': "A11"
-        }
-        self.scripts = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
-        self.subprotocols = [Subprotocol(str(script), script, self.construct, self.parameters) for script in self.scripts]
-
-    def run(self) -> "Protocol":
-
-        for subprotocol in self.subprotocols:
-            self = subprotocol(self)
-            self.history.append(subprotocol)
-            self.generate_ot_script(self, assay, template_script)
-            raise NotImplementedError
-
-
 class Clip_Reaction(Protocol):
     """ Requires Prefix, Part, and Suffix (PPS). See in DNAbot repo
     'generate_constructs_list', where each construct from the
@@ -609,7 +583,8 @@ class Plate(Container):
             self.deck_pos = 0
 
         # init 2D (nested) List
-        self.wells: List[List[Container]] = [[None] * self.shape[1]] * self.shape[0]
+        #self.wells: List[List[Container]] = [[None] * self.shape[1]] * self.shape[0]
+        self.wells: List[Container] = []
         
     def is_full(self):
         """ Check if all wells have been filled """
@@ -622,9 +597,33 @@ class Plate(Container):
                 return False
         return True
 
-    def add_wells(self, content):
-
-        return content
+    def add_wells(self, well_contents, well_volumes):
+        """for wellrow, well_list in enumerate(self.wells):
+            for wellcol, well in enumerate(well_list):
+                if well == None:
+                    new_well = Well(contents=well_contents, volumes=well_volumes)
+                    self.wells[wellrow][wellcol] = new_well
+                    break
+                elif ((wellrow == self.shape[0]-1) and (wellcol == self.shape[1]-1)):
+                    raise RuntimeError(f"No space for new well")
+                else: 
+                    continue
+                
+        """
+        if len(self.wells < self.shape[0]*self.shape[1] - 1):
+            self.wells.append(Well(well_contents, well_volumes))
+        else:
+            raise RuntimeError(f"No more free wells.")
+    
+    def print_wells(self):
+        # how wells look
+        well_list = self.wells.copy()
+        norows = self.shape[0]
+        nocols = self.shape[1]
+        for row in range(norows - 1):
+            start = row*nocols
+            end = start + nocols - 1
+            print(well_list[start:end])
 
 
 class Setup(Step):
