@@ -5,8 +5,7 @@ import logging
 from typing import Dict, Iterable, List, Tuple, Set, Any
 
 from script_gen_pipeline.labware.containers import Content
-from synbio.reagents import Reagent
-from synbio.species import Species
+from script_gen_pipeline.protocol.biochem_utils import Reagent, Species
 
 
 class Mix:

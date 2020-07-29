@@ -18,6 +18,7 @@ Content = Union[Variant, Reagent, Species]
 
 Primers = Union[List, Variant]
 
+
 def content_id(content: Content) -> str:
     """Return a "unique" ID for each set of content.
 
@@ -31,14 +32,14 @@ def content_id(content: Content) -> str:
         TypeError: If unrecognized content type
     """
 
-    if isinstance(content, SeqRecord):
+    if isinstance(content, Variant):
         if content.id != "<unknown id>":
-            return content.id
+            return content.short_id
         return str(content.seq)
-    if isinstance(content, RestrictionType):
-        return str(content)  # get enzyme cut seq
-    if isinstance(content, Primers):
-        return "primers:" + str(content.fwd) + ";" + str(content.rev)
+    # if isinstance(content, RestrictionType):
+    #     return str(content)  # get enzyme cut seq
+    # if isinstance(content, Primers):
+    #     return "primers:" + str(content.fwd) + ";" + str(content.rev)
     if isinstance(content, Reagent):
         return content.name
     if isinstance(content, Species):
@@ -134,6 +135,9 @@ class Container:
 
     def __str__(self):
         return f"{type(self).__name__}:" + ",".join(content_id(c) for c in self)
+
+    def __repr__(self):
+        return f"{type(self).__name__}: {str(self.id)[0:6]}"
 
     def __contains__(self, content: Content) -> bool:
         """Return whether the content is in this well."""

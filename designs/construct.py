@@ -37,6 +37,7 @@ class Variant:
         self.component = component
 
         self.id = uuid4()
+        self.short_id = str(uuid4())[0:6]
         self.name = self.get_name()
         self.module_id = None  # we probs don't need both
         self.module_order_idx = None
@@ -50,21 +51,21 @@ class Variant:
         self.suffix = None
         
     def get_name(self):
-        warn("NotImplem: get SBOL part name")
+        print("[Variant] NotImplem: get SBOL part name")
         # name = pysbol.get_part(self.component)
         return f'BBA_fake_{self.component}'  # str(self.id)[0:3]
 
     def get_uri(self):
-        warn("NotImplem: get SBOL uri")
+        print("[Variant] NotImplem: get SBOL uri")
         # uri = pysbol.get_uri(self.component)
         return 0
 
     def get_seq(self):
-        warn("NotImplem: get SBOL DNA sequence. Watch out for internal references.")
+        print("[Variant] NotImplem: get SBOL DNA sequence. Watch out for internal references.")
         return 0
 
     def get_annotations(self):
-        warn("NotImplem: get SBOL annotations")
+        print("[Variant] NotImplem: get SBOL annotations")
         return 0
 
     def is_linker(self):
@@ -91,7 +92,7 @@ class Part:
         range: sequence information (relation)
     """
     def __init__(self, component):
-        print("Parse component into constituent Variant")
+        print("[Part init] Parse component into constituent Variant")
         self.role = self.get_role(component)
         self.variants: List(Variant) = self.make_variants(component)
         self.module_id = None  # Set once Modules are made
@@ -105,7 +106,7 @@ class Part:
         # self.range = self.get_range()
 
     def get_role(self, component):
-        warn("NotImplem: get component role SBOL style")
+        print("[Part get_role] NotImplem: get component role SBOL style")
         role = 'Yuh'
         return role
 
@@ -117,7 +118,7 @@ class Part:
 
     def is_linker(self):
         """ Check if this part's role is 'Linker' """
-        warn("make sure is_linker() matches the same fxn in Variant")
+        print("[Part is_linker] make sure is_linker() matches the same fxn in Variant")
         return (self.role == 'Linker')
 
     def get_module_id(self):
@@ -140,7 +141,7 @@ class Part:
         """ Enumerate each combinatorial design in this part; 
         refer to Ming's combinatorial derivation code"""
         comb_ders = component
-        warn(f"NotImplem: from the root component {component} get child variant components")
+        print(f"NotImplem: from the root component {component} get child variant components")
         return [comb_ders]
 
     def set_module_info(self, module_id, **kwargs):
@@ -201,7 +202,7 @@ class Construct():
 
         self.id = uuid4()
         # self.sbol_input = sbol_input
-        print("\n\nshould be making modules now")
+        print("\n\n[Construct init] should be making modules now")
         self.modules: List[Module] = self.make_modules(sbol_input)
         """ Might be able to make modules right away from sbol_input
         depending on output of SBOL Designer """
@@ -282,7 +283,7 @@ class Construct():
         """ Check that the module order makes sense """
         last_order_idx = self.modules[0].order_idx
         for module in self.modules:
-            if last_order_idx != module.order_idx:
+            if last_order_idx > module.order_idx:
                 raise "The modules are not listed in the correct order."
             last_order_idx = module.order_idx
 

@@ -5,11 +5,14 @@ import sys
 sys.path.insert(0,'../') # print('sys.path', sys.path)
 
 from typing import List, Tuple, Union
-from designs.construct import Construct, Variant
 from uuid import uuid4
 
-from script_gen_pipeline.protocol.mix_copy import Mix
-from script_gen_pipeline.labware.containers_copy import Content
+from script_gen_pipeline.designs.construct import Construct, Variant
+from script_gen_pipeline.labware.containers import Content, Container, Well
+from script_gen_pipeline.labware.mix import Mix
+from script_gen_pipeline.protocol.steps import Setup, Transfer
+from script_gen_pipeline.protocol.protocol import Basic, Plate
+from script_gen_pipeline.protocol.biochem_utils import Reagent, Species
 
 
 # Make toy construct
@@ -51,8 +54,6 @@ def get_variant(variant_list: List[Variant], linker_id):
             return variant_list[var_idx+1]
     return 0
 
-print('construct',construct)
-
 for variant in construct:
     if not variant.is_linker():
         prefix = get_variant(construct, variant.prefix)
@@ -64,100 +65,6 @@ print('clip_components', clip_components)
 
 
 ######################
-"""Reagents."""
-
-
-class Reagent:
-    """A Reagent. Ex T4 Ligase, Buffer, etc.
-
-    Keyword Args:
-        name: the reagent's name (default: {""})
-    """
-
-    def __init__(self, name: str = ""):
-        assert name
-
-        self.name = name
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def __eq__(self, other) -> bool:
-        return hash(self) == hash(other)
-
-
-"""Lab species and organisms."""
-
-
-class Species:
-    """A Species. Ex E coli.
-
-    Keyword Args:
-        name: the species's name (default: {""})
-    """
-
-    def __init__(self, name: str = ""):
-        assert name
-
-        self.name = name
-
-    def __hash__(self):
-        """Hash species."""
-
-        return hash(self.name)
-
-    def __eq__(self, other) -> bool:
-        return hash(self) == hash(other)
-
-
-class Container:
-    """A container with contents.
-
-    TODO: make contents a set for uniqueness
-
-    Keyword Args:
-        contents: the contents of the container (default: {None})
-        volumes: volumes of each content (default: {None})
-    """
-
-    volume_dead = -1
-    """Volume that should be left unused at bottom of container."""
-
-    volume_max = -1
-    """Max volume within each container."""
-
-    rows = 1
-    """Rows in the container (or its parents, as with Wells and their Plate)"""
-
-    cols = 1
-    """Cols in the container (or its parents, as with Wells and their Plate)"""
-
-    def __init__(
-        self,
-        contents: Union[Content, List[Content]] = None,
-        volumes: List[float] = None,
-    ):
-        self.id = uuid4()
-
-        if not contents:
-            self.contents: List[Content] = []
-        elif not isinstance(contents, list):
-            self.contents = [contents]
-        else:
-            self.contents = contents
-
-        self.volumes = volumes if volumes else [-1] * len(self.contents)
-        self.withdrawn = 0.0  # volume with withdraws during pipette sim
-
-
-class Well(Container):
-    """A single well in a plate."""
-
-    volume_max = 200
-    volume_dead = 15
-    rows = 8
-    cols = 12
-
 
 GOLDEN_GATE_MIX = Mix(
     {Reagent("master mix"): 4.0, Variant: 3.0},
@@ -176,7 +83,7 @@ for con_i, construct in enumerate(constructs):
             suffix = get_variant(construct, variant.suffix)
             clip_components.append([prefix, variant, suffix])
     clip_components.pop(0)
-    print(con_i, 'clip_components', clip_components)
+    # print(con_i, 'clip_components', clip_components)
 
     wells = []
     for clip_part in clip_components:
@@ -191,12 +98,15 @@ for con_i, construct in enumerate(constructs):
     all_wells.append(wells)
 all_wells.pop(0)
 
-# TEST 
-n = [(0, 'e'), (3, 'e'), 'a', 'e', 't', 's', 'n']
-for k in n:
-    e = n.pop(-1)
-    print('e', e)
-    print('k', k)
+# TEST pop() in a loop
+# n = [[0, 'e'], (3, 'e'), 'a', 'e', 't', 's', 'n']
+# for k in n:
+#     e = n.pop(-1)
+#     print('e', e)
+#     print('k', k)
+# a = 1
+# c = a or (n[0][0] if isinstance(n[0], list) else n[0])
+# print('c', c)
 
 shape = (8, 12)
 layout_wells: List[List[Container]] = [[None] * shape[1]] * shape[0]
@@ -213,5 +123,29 @@ for i in range(len(remaining_wells)):
             row_count += 1
             if row_count >= shape[0]:
                 break
-print('remaining_wells:', len(remaining_wells), remaining_wells)          
-print(layout_wells)
+
+
+def recursive_len(item):
+    if type(item) == list:
+        return sum(recursive_len(subitem) for subitem in item)
+    else:
+        return 1
+
+
+print('remaining constructs:', len(remaining_wells))
+print('remaining wells:', recursive_len(remaining_wells))
+
+plate_count = 0
+parameters = None
+num_slots = parameters if parameters else 12  # OT default slots
+slots: List[Container] = [[None]]*num_slots
+slots[0] = Plate()
+slots[1] = Plate()
+slots[2] = Plate()
+
+plate_count += sum(isinstance(p, Plate) for p in slots)
+print('plate_count', plate_count)
+
+# Test that Setup works
+protocol = Basic(real_construct)
+
