@@ -9,15 +9,14 @@ from uuid import uuid4
 # from Bio.SeqRecord import SeqRecord
 
 from script_gen_pipeline.protocol.instructions import Instruction
-from synbio.primers import Primers
-from synbio.reagents import Reagent
-from synbio.species import Species
-from Bio.SeqRecord import SeqRecord
-from Bio.Restriction.Restriction import RestrictionType
-from script_gen_pipeline.designs.construct import Part, Module
+# from .primers import Primers
+from script_gen_pipeline.protocol.biochem_utils import Reagent, Species
+from script_gen_pipeline.designs.construct import Variant
 
-Content = Union[SeqRecord, Part, Module, RestrictionType, Primers, Reagent, Species]
+Content = Union[Variant, Reagent, Species]
 """The content of a container can be a sequence, enzyme, or primers."""
+
+Primers = Union[List, Variant]
 
 
 def content_id(content: Content) -> str:
@@ -33,22 +32,18 @@ def content_id(content: Content) -> str:
         TypeError: If unrecognized content type
     """
 
-    if isinstance(content, SeqRecord):
+    if isinstance(content, Variant):
         if content.id != "<unknown id>":
-            return content.id
+            return content.short_id
         return str(content.seq)
-    if isinstance(content, RestrictionType):
-        return str(content)  # get enzyme cut seq
-    if isinstance(content, Primers):
-        return "primers:" + str(content.fwd) + ";" + str(content.rev)
+    # if isinstance(content, RestrictionType):
+    #     return str(content)  # get enzyme cut seq
+    # if isinstance(content, Primers):
+    #     return "primers:" + str(content.fwd) + ";" + str(content.rev)
     if isinstance(content, Reagent):
         return content.name
     if isinstance(content, Species):
         return content.name
-    if isinstance(content, Part):
-        return content.id
-    if isinstance(content, Module):
-        return content.id
     raise TypeError(content)
 
 
@@ -140,6 +135,9 @@ class Container:
 
     def __str__(self):
         return f"{type(self).__name__}:" + ",".join(content_id(c) for c in self)
+
+    def __repr__(self):
+        return f"{type(self).__name__}: {str(self.id)[0:6]}"
 
     def __contains__(self, content: Content) -> bool:
         """Return whether the content is in this well."""
@@ -542,49 +540,3 @@ class Layout:
             else:
                 containers_other.append(container)
         return containers_reagents, containers_other
-
-class Plate(Container):
-    # Move to container.py
-    """ A plate holding a number of Wells """
-    def __init__(self, parameters: Dict = None):
-        super().__init__()
-        #print("NotImplem: Plate class to contain Wells and deck nr")
-
-        # default
-        self.shape = (8, 12)
-        self.deck_pos = 0  
-        if parameters:
-            #print("NotImplem: Get plate type and well num")
-            self.shape = (8, 12)
-            self.deck_pos = 0
-
-        # init 2D (nested) List
-        #self.wells: List[List[Container]] = [[None] * self.shape[1]] * self.shape[0]
-        self.wells: List[Container] = []
-        # non ideal way of doing it - temporary
-        
-    def is_full(self):
-        """ Check if all wells have been filled """
-        
-        if len(self.wells < self.shape[0]*self.shape[1] - 1):
-            return False
-        else:
-            return True
-
-    def add_wells(self, well_obj):
-        """ Adds inputted well to list of wells"""
-        if len(self.wells < self.shape[0]*self.shape[1] - 1):
-            self.wells.append(well_obj)
-            return len(self.wells)
-        else:
-            raise RuntimeError(f"No more free wells.")
-    
-    def print_wells(self):
-        # how wells look
-        well_list = self.wells.copy()
-        norows = self.shape[0]
-        nocols = self.shape[1]
-        for row in range(norows - 1):
-            start = row*nocols
-            end = start + nocols - 1
-            print(well_list[start:end])
