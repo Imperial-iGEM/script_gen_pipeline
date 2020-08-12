@@ -8,6 +8,30 @@
 
 """Steps: lab processes to assemble a design."""
 
+from collections import defaultdict
+from typing import Sequence, List, Dict, Optional, Callable
+
+from script_gen_pipeline.labware.containers import content_id, Content, Container, Fridge
+from script_gen_pipeline.protocol.instructions import Instruction, Temperature, Transfer
+from script_gen_pipeline.protocol.biochem_utils import Reagent, Species
+
+
+class Step:
+    """A single Step of a Protocol. Taken
+    Straight out of synbio."""
+
+    def __init__(self):
+        self.transfers: List[Transfer] = []
+        self.temps: List[Temperature] = []
+        self.instructions: List[str] = []
+        self.inputs: Dict[str, Tuple[Content, float]]
+
+    def __call__(self, protocol: "Protocol"):
+        """Execute a step on a protocol, mutating containers and instructions."""
+        protocol.add_instruction
+
+        raise NotImplementedError
+
 
 class Setup(Step):
     """Create a list of transfers to make a list of setup containers
@@ -34,9 +58,61 @@ class Setup(Step):
             raise ValueError
 
         self.target = target
+        if isinstance(target[0], list):
+            print("[Setup] Target og a List[Container] and now List[List[Container]]")
         self.dest = dest
         self.name = name
         self.instructions = instructions if instructions else []
+
+    def __call__(self, protocol: "Protocol"):
+        """Create setup containers with enough contents to fill the target containers."""
+
+        # accumulate the list of transfer volumes necessary
+        id_to_content: Dict[str, Content] = {}
+        id_to_volumes: Dict[str, List[float]] = defaultdict(list)
+        # for container in self.target:
+        for construct in self.target:
+            for container in construct:
+                for i, content in enumerate(container):
+                    cid = content_id(content)
+                    id_to_content[cid] = content
+                    id_to_volumes[cid].append(container.volumes[i])
+
+        # create the setup containers and transfers based on volume/count
+        container = self.dest or (self.target[0][0] if isinstance(self.target[0], list) else self.target[0])
+        volume_max = container.volume_max
+        setup: List[Container] = []
+        for cid, content in id_to_content.items():
+            volumes = id_to_volumes[cid]
+
+            new_container = container.create(
+                content, volumes=[volumes.pop() + container.volume_dead]
+            )
+            while volumes:
+                volume = volumes.pop()
+
+                if new_container.volume() + volume > volume_max:
+                    setup.append(new_container)
+                    new_container = container.create(content, volumes=[volume])
+
+                new_container.volumes[0] += volume
+            setup.append(new_container)
+
+        # make a transfer to fill each setup container
+        transfers = [Transfer(src=Fridge(c), dest=c, volume=c.volume()) for c in setup]
+        dest_name = type(setup[0]).__name__
+        instructions = [
+            f"Setup each {dest_name} with volumes (uL) specified"
+        ] + self.instructions
+
+        instruction = Instruction(
+            name=self.name, transfers=transfers, instructions=instructions
+        )
+
+        protocol.add_instruction(instruction)
+        protocol.containers = sorted(setup)
+
+        return protocol
 
 
 class Pipette(Step):
