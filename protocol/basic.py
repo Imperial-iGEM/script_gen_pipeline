@@ -3,6 +3,7 @@
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Iterable, Optional
 import pandas as pd
+import numpy as np
 
 #from Bio.Restriction.Restriction import RestrictionType
 #from Bio.Restriction import BsaI
@@ -67,11 +68,11 @@ class Basic(Protocol):
     """
     
     def __init__(self, 
-        construct: Construct = Construct(),
+        constructs: List[Construct] = [Construct()],
         name: str = "",
         #source_wells: Dict[str] = [], 
     ):
-        super().__init__(name=name, construct=construct)
+        super().__init__(name=name, constructs=constructs)
         self.mix = basic_mix
         #self.source_wells = source_wells
         self.parameters = {
@@ -80,12 +81,13 @@ class Basic(Protocol):
             'ethanol_well_for_stage_2': "A11"
         }
         self.scripts = [CLIP_OUT_PATH, MAGBEAD_OUT_PATH, F_ASSEMBLY_OUT_PATH, TRANS_SPOT_OUT_PATH]
-        self.subprotocols = [Subprotocol(str(script), script, self.construct, self.parameters) for script in self.scripts]
+        self.subprotocols = [Subprotocol(str(script), script, self.constructs, self.parameters) for script in self.scripts]
 
     def run(self):
-        self.clip_df, self.master_mix = self._create_clip_df()
+        self.clips_df, self.master_mix, self.constructs_list = self._create_clips_df()
         self.source_plate, self.source_info = self._create_source_plate()
         self.mixed_wells = self._create_mixed_wells()
+        self.final_assembly_dict = self._gen_final_assembly_dict()
 
         # clip reaction subprotocol
         # purification subprotocol
@@ -97,29 +99,80 @@ class Basic(Protocol):
             self.generate_ot_script(self, assay, template_script)
             raise NotImplementedError
 
-    def _create_clip_df(self):
+    def _get_construct_modules(self, construct):
         clips_info = {'prefixes': [], 'parts': [],
 	              'suffixes': []}
-        for index, module in enumerate(self.construct.modules):
+        for index, module in enumerate(construct.modules):
             if index % 2 != 0:
                 clips_info['parts'].append(module)
-                prefix_linker = self.construct.modules[index - 1]
+                prefix_linker = construct.modules[index - 1]
                 clips_info['prefixes'].append(prefix_linker)
-                if index == len(self.construct.modules) - 1:
-                    suffix_linker = self.construct.modules[0]
+                if index == len(construct.modules) - 1:
+                    suffix_linker = construct.modules[0]
                     clips_info['suffixes'].append(suffix_linker)
                 else:
-                    suffix_linker = self.construct.modules[index + 1]
+                    suffix_linker = construct.modules[index + 1]
                     clips_info['suffixes'].append(suffix_linker)
-        clips_df = pd.DataFrame.from_dict(clips_info)
-        # add a 'number' column for future?
-        multiple = len(clips_df)*CLIP_DEAD_VOL/CLIP_VOL
+        clips_info_df = pd.DataFrame.from_dict(clips_info)
+        return clips_info_df
+    
+    def _get_final_well(self, sample_number):
+        """Determines well containing the final sample from sample number.
+        """
+        letter = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+        final_well_column = sample_number // 8 + \
+            (1 if sample_number % 8 > 0 else 0)
+        final_well_row = letter[sample_number - (final_well_column - 1) * 8 - 1]
+        return final_well_row + str(final_well_column)
+
+    def _create_clips_df(self):
+        constructs_list = []
+        for construct in self.constructs:
+            constructs_list.append(self._get_construct_modules(construct))
+
+        merged_construct_dfs = pd.concat(constructs_list, ignore_index=True)
+        unique_clips_df = merged_construct_dfs.drop_duplicates()
+        unique_clips_df = unique_clips_df.reset_index(drop=True)
+        clips_df = unique_clips_df.copy()
+
+        # Error
+        if len(unique_clips_df.index) > MAX_CLIPS:
+            raise ValueError(
+                'Number of CLIP reactions exceeds 48.')
+
+        # Count number of each CLIP reaction
+        clip_count = np.zeros(len(clips_df.index))
+        for i, unique_clip in unique_clips_df.iterrows():
+            for _, clip in merged_construct_dfs.iterrows():
+                if unique_clip.equals(clip):
+                    clip_count[i] = clip_count[i] + 1
+        clip_count = clip_count // FINAL_ASSEMBLIES_PER_CLIP + 1
+        clips_df['number'] = [int(i) for i in clip_count.tolist()]
+
+        # Associate well/s for each CLIP reaction
+        clips_df['mag_well'] = pd.Series(['0'] * len(clips_df.index),
+                                        index=clips_df.index)
+        for index, number in clips_df['number'].iteritems():
+            if index == 0:
+                mag_wells = []
+                for x in range(number):
+                    mag_wells.append(self._get_final_well(x + 1 + 48))
+                clips_df.at[index, 'mag_well'] = tuple(mag_wells)
+            else:
+                mag_wells = []
+                for x in range(number):
+                    well_count = clips_df.loc[
+                        :index - 1, 'number'].sum() + x + 1 + 48
+                    mag_wells.append(self._get_final_well(well_count))
+                clips_df.at[index, 'mag_well'] = tuple(mag_wells)
+
+        multiple = (clips_df['number'].sum())*CLIP_DEAD_VOL/CLIP_VOL
         # in future mutiple = (clips_df['number'].sum())*CLIP_DEAD_VOL/CLIP_VOL
         master_mix = Mix({Reagent("Promega T4 DNA Ligase buffer, 10X"): multiple*T4_BUFF_VOL, 
         Reagent("NEB BsaI-HFv2"): multiple*BSAI_VOL, 
         Reagent("Promega T4 DNA Ligase"): multiple*T4_LIG_VOL, 
         Reagent("water"): multiple*CLIP_MAST_WATER})
-        return clips_df, master_mix
+        return clips_df, master_mix, constructs_list
     
     def _create_source_plate(self):
         # list of modules -> plate
@@ -127,18 +180,43 @@ class Basic(Protocol):
         # what is the mix?
         source_plate = Plate()
         source_info = {'modules': [], 'well_index': [], 'well': []}
-        for module in self.construct.modules:
-            # need to create new df saying module with corresponding index
-            well_contents, well_volumes = source_mix(module)
-            well = Well(well_contents, well_volumes)
-            indx = source_plate.add_wells(well)
-            source_info['modules'].append(module)
-            source_info['well_index'].append(indx)
-            source_info['well'].append(well)
+        modules_list = []
+        for construct in self.constructs:
+            for module in construct.modules:
+                # need to create new df saying module with corresponding index
+                if module not in modules_list:
+                    modules_list.append(module)
+                    well_contents, well_volumes = source_mix(module)
+                    well = Well(well_contents, well_volumes)
+                    indx = source_plate.add_wells(well)
+                    source_info['modules'].append(module)
+                    source_info['well_index'].append(indx)
+                    source_info['well'].append(well)
         return source_plate, source_info
+
+    def _gen_final_assembly_dict(self):
+        # mapping of mag_wells to final assembly wells
+        final_assembly_dict = {}
+        clips_count = np.zeros(len(self.clips_df.index))
+        for construct_index, construct_df in enumerate(self.constructs_list):
+            construct_well_list = []
+            for _, clip in construct_df.iterrows():
+                clip_info = self.clips_df[(self.clips_df['prefixes'] == clip['prefixes']) &
+                                    (self.clips_df['parts'] == clip['parts']) &
+                                    (self.clips_df['suffixes'] == clip['suffixes'])]
+                clip_wells = clip_info.at[clip_info.index[0], 'mag_well']
+                clip_num = int(clip_info.index[0])
+                clip_well = clip_wells[int(clips_count[clip_num] //
+                                        FINAL_ASSEMBLIES_PER_CLIP)]
+                clips_count[clip_num] = clips_count[clip_num] + 1
+                construct_well_list.append(clip_well)
+            final_assembly_dict[self._get_final_well(
+                construct_index + 1)] = construct_well_list
+        return final_assembly_dict
 
     def _create_mixed_wells(self):
         # clips_df -> Plate, use basic_mix
+        
         mixed_wells = Plate()
         for clip_index, clip_info in self.clip_df.iterrows():
             modules = []
@@ -146,13 +224,19 @@ class Basic(Protocol):
             modules.append(clip_info['parts'])
             modules.append(clip_info['suffixes'])
             well_contents, well_volumes = self.mix(modules)
-            well = Well(well_contents, well_volumes)
-            indx = mixed_wells.add_wells(well)
+            wells = []
+            well_indices = []
+            for x in range(clip_info['number']):
+                well = Well(well_contents, well_volumes)
+                wells.append(well)
+                indx = mixed_wells.add_wells(well)
+                well_indices.append(indx)
             self.clip_df.insert(clip_index, 'well', well)
             self.clip_df.insert(clip_index, 'well_index', indx)
         return mixed_wells
 
-
+    def _create_mag_wells(self):
+        # need to modify _get_final_well() and add_wells() to do this
 
             
 
